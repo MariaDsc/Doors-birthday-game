@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DOORS — Edição Especial</title>
+  
+  <!-- script src = javascript >> carregar o framework do Phaser (desenv de jogos web) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+  
+  <!-- CSS -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-container">
+    <!--  div principal que vai conter TODO o jogo >> Phaser vai desenhar o canvas (tela do jogo) dentro dela-->
+    <div id="ui-overlay">
+    <!-- Interface do jogo (corações e contador) >> pverlay = não altera o resto, se mantém fixa -->
+      <div id="health-container">
+        <div class="heart" id="h1"></div>
+        <div class="heart" id="h2"></div>
+        <div class="heart" id="h3"></div>
+        <div class="heart" id="h4"></div>
+        <!-- divs vazias para os corações >> serão desenhados em CSS -->
+      </div>
+      <div id="door-counter">DOOR <span id="door-num">001</span></div>
+      <!-- <span> = tag para agrupar e estilizar partes específicas de um texto >> só o door-num será atualizado-->
+    </div>
+    
+    <!-- Título da fase (aparece e some) -->
+    <div id="phase-title"></div>
+    
+    <!-- Dica de controles -->
+    <div id="controls-hint">← → MOVER &nbsp;|&nbsp; ESPAÇO / ↑ PULAR &nbsp;|&nbsp; E INTERAGIR</div>
+  </div>
+
+  <!-- JavaScript -->
+  <script src="game.js"></script>
+</body>
+</html>

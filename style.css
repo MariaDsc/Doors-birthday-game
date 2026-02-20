@@ -1,0 +1,121 @@
+/* RESET BÁSICO - remove margens e paddings padrão dos navegadores*/
+* { 
+  margin: 0; 
+  padding: 0; 
+  box-sizing: border-box; 
+  /* border box = faz o tamanho pedido na div ser o tamanho final, independente de borda ou padding*/
+}
+
+/* CORPO DA PÁGINA - fundo escuro e centralização */
+body {
+  background: #0a0a0f;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+}
+
+/* CONTAINER PRINCIPAL DO JOGO - onde o Phaser vai desenhar */
+#game-container {
+  position: relative;
+  border: 2px solid #2a2a3a;
+  box-shadow: 0 0 40px rgba(80, 60, 120, 0.4), 0 0 80px rgba(80, 60, 120, 0.15);
+}
+
+/* OVERLAY DA INTERFACE - camada por cima do jogo */
+#ui-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none; /* IMPORTANTE: cliques passam para o jogo */
+  z-index: 10;
+}
+
+/* CONTAINER DOS CORAÇÕES */
+#health-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ESTILO DO CORAÇÃO (formato com clip-path) */
+.heart {
+  width: 22px;
+  height: 22px;
+  background: #e05555;
+  clip-path: polygon(50% 0%, 100% 35%, 85% 100%, 50% 75%, 15% 100%, 0% 35%);
+  transition: all 0.3s;
+  filter: drop-shadow(0 0 4px rgba(220, 80, 80, 0.8));
+}
+
+/* CORAÇÃO VAZIO */
+.heart.empty {
+  background: #2a2a3a;
+  filter: none;
+}
+
+/* CONTADOR DE PORTAS */
+#door-counter {
+  color: #8877bb;
+  font-size: 22px;
+  letter-spacing: 3px;
+  text-shadow: 0 0 12px rgba(180, 160, 255, 0.9);
+}
+
+/* TÍTULO DA FASE (aparece no centro) */
+#phase-title {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #c0aae8;
+  font-size: 22px;
+  letter-spacing: 6px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 20;
+  text-shadow: 0 0 20px rgba(192, 170, 232, 0.8);
+  opacity: 0;
+  transition: opacity 1s;
+  text-transform: uppercase;
+}
+
+/* DICA DE CONTROLES (rodapé) */
+#controls-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #44445a;
+  font-size: 13px;
+  letter-spacing: 2px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* EFEITO SCANLINE (linhas de TV antiga) */
+#game-container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.05) 2px,
+    rgba(0, 0, 0, 0.05) 4px
+  );
+  pointer-events: none;
+  z-index: 5;
+}
