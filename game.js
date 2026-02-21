@@ -1,116 +1,290 @@
 // =============================================
-//  CONFIGURAÇÕES GLOBAIS
+//  CONFIGURAÇÕES DO JOGO
 // =============================================
 const GAME_W = 900;
 const GAME_H = 500;
 
 const COLORS = {
-  bg:          0x0a0a0f,
-  floor:       0x1a1a28,
-  floorEdge:   0x2a2840,
-  wall:        0x111120,
-  wallDetail:  0x1e1e32,
-  player:      0xd0c8f0,
-  playerEye:   0x9988dd,
-  door:        0x3a2a5a,
-  doorFrame:   0x6644aa,
-  doorGlow:    0x9966ff,
-  platform:    0x22203a,
+  bg: 0x0a0a0f,
+  floor: 0x1a1a28,
+  floorEdge: 0x2a2840,
+  wall: 0x111120,
+  wallDetail: 0x1e1e32,
+  player: 0xd0c8f0,
+  playerEye: 0x9988dd,
+  door: 0x3a2a5a,
+  doorFrame: 0x6644aa,
+  doorGlow: 0x9966ff,
+  platform: 0x22203a,
   platformTop: 0x3a3060,
-  torch:       0xffaa33,
-  torchGlow:   0xff7700,
-  highlight:   0x8866cc,
-  danger:      0xe05555,
-  text:        0xc0aae8,
-  shadow:      0x050508,
+  torch: 0xffaa33,
+  torchGlow: 0xff7700,
+  highlight: 0x8866cc,
+  danger: 0xe05555,
+  text: 0xc0aae8,
+  shadow: 0x050508,
 };
 
-let playerHealth = 4;
-let currentDoor  = 1;
-let gameState    = 'playing';
+// Textos do jogo
+const TEXTS = {
+  MOVE: '<- -> para mover',
+  JUMP: 'ESPAÇO ou ↑ para pular',
+  EXPLORE: 'Explore as salas...',
+  ENTER_DOOR: '[E] para entrar na porta',
+  ENTER: '[E] Entrar',
+  HIDE: '[E] Esconder',
+  EXIT_HIDE: '[E] Sair',
+  NEED_KEY: 'Precisa da chave!',
+  KEY_FOUND: 'Chave encontrada! Vá para a saída!',
+  GAME_OVER: 'VOCÊ MORREU',
+  TRY_AGAIN: 'Pressione R para tentar de novo',
+  WIN: 'PARABÉNS!',
+  BIRTHDAY: 'Feliz Aniversário!',
+  PHASE_1: 'FASE 1 - O CORREDOR',
+  PHASE_2: 'FASE 2 - HI, BELLS...',
+  PHASE_3: 'FASE 3 - A SALA DO SALMÃO',
+  PHASE_4: 'FASE 4 - A ACADEMIA',
+  PHASE_5: 'FASE 5 - O CLUBE',
+  PHASE_FINAL: 'FASE FINAL - BIBLIOTECA'
+};
+
+// Estado global do jogo
+const GameState = {
+  health: 4,
+  door: 1,
+  
+  damage(amount = 1) {
+    this.health = Math.max(0, this.health - amount);
+    this.updateUI();
+    return this.health <= 0;
+  },
+  
+  heal(amount = 1) {
+    this.health = Math.min(4, this.health + amount);
+    this.updateUI();
+  },
+  
+  reset() {
+    this.health = 4;
+    this.door = 1;
+    this.updateUI();
+  },
+  
+  updateUI() {
+    for (let i = 1; i <= 4; i++) {
+      const h = document.getElementById('h' + i);
+      if (h) h.classList.toggle('empty', i > this.health);
+    }
+    const el = document.getElementById('door-num');
+    if (el) el.textContent = String(this.door).padStart(3, '0');
+  }
+};
 
 // =============================================
-//  FUNÇÕES AUXILIARES (UI)
+//  CLASSE BASE - TODAS AS FASES HERDAM DAQUI
 // =============================================
-function updateHealthUI() {
-  for (let i = 1; i <= 4; i++) {
-    const h = document.getElementById('h' + i);
-    if (h) h.classList.toggle('empty', i > playerHealth);
+class BaseScene extends Phaser.Scene {
+  constructor(key) {
+    super({ key });
+  }
+
+  init() {
+    this.player = null;
+    this.playerGfx = null;
+    this.playerShadow = null;
+    this.platforms = null;
+    this.cursors = null;
+    this.keys = null;
+    this.facingLeft = false;
+    this.transitioning = false;
+    this.activePrompt = null;
+    this.floorY = GAME_H - 60;
+    this.worldWidth = 2400;
+  }
+
+  create() {
+    this.cameras.main.fadeIn(800, 0, 0, 0);
+    this.setupControls();
+    this.createPlayer();
+    this.setupWorld();
+  }
+
+  setupWorld() {
+    this.physics.world.setBounds(0, 0, this.worldWidth, GAME_H);
+    this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_H);
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+  }
+
+  createPlayer() {
+    this.player = this.physics.add.sprite(80, this.floorY - 40)
+      .setVisible(false)
+      .setCollideWorldBounds(true);
+    
+    this.player.body.setSize(24, 40);
+    this.player.body.setGravityY(700);
+    this.player.body.setMaxVelocityY(900);
+    
+    this.playerGfx = this.add.graphics().setDepth(5);
+    this.playerShadow = this.add.graphics().setDepth(1);
+  }
+
+  drawPlayer() {
+    const x = this.player.x;
+    const y = this.player.y;
+    const g = this.playerGfx;
+    
+    g.clear();
+    
+    // Sombra
+    this.playerShadow.clear();
+    this.playerShadow.fillStyle(0x000000, 0.25);
+    this.playerShadow.fillEllipse(x, GAME_H - 62, 34, 10);
+    
+    // Corpo
+    g.fillStyle(COLORS.player);
+    g.fillRect(x - 10, y - 38, 20, 28);
+    
+    // Cabeça
+    g.fillRect(x - 9, y - 58, 18, 18);
+    
+    // Olhos
+    g.fillStyle(COLORS.playerEye);
+    const eyeX = this.facingLeft ? x - 5 : x + 2;
+    g.fillRect(eyeX, y - 53, 4, 4);
+    
+    // Pernas
+    g.fillStyle(COLORS.player, 0.8);
+    g.fillRect(x - 8, y - 10, 7, 12);
+    g.fillRect(x + 1, y - 10, 7, 12);
+    
+    // Braços
+    g.fillRect(x - 14, y - 36, 5, 20);
+    g.fillRect(x + 9, y - 36, 5, 20);
+  }
+
+  setupControls() {
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keys = this.input.keyboard.addKeys({
+      left: Phaser.Input.Keyboard.KeyCodes.A,
+      right: Phaser.Input.Keyboard.KeyCodes.D,
+      jump: Phaser.Input.Keyboard.KeyCodes.W,
+    });
+    
+    this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.eKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    this.eKey.on('down', () => this.handleInteract());
+  }
+
+  handleMovement() {
+    if (this.transitioning) return;
+    
+    const onGround = this.player.body.blocked.down;
+    const speed = 200;
+
+    if (this.cursors.left.isDown || this.keys.left.isDown) {
+      this.player.body.setVelocityX(-speed);
+      this.facingLeft = true;
+    } else if (this.cursors.right.isDown || this.keys.right.isDown) {
+      this.player.body.setVelocityX(speed);
+      this.facingLeft = false;
+    } else {
+      this.player.body.setVelocityX(0);
+    }
+
+    if ((this.cursors.up.isDown || this.keys.jump.isDown || this.spaceKey.isDown) && onGround) {
+      this.player.body.setVelocityY(-480);
+    }
+  }
+
+  isNear(obj, distance = 70) {
+    if (!this.player || !obj) return false;
+    return Phaser.Math.Distance.Between(
+      this.player.x, this.player.y,
+      obj.x, obj.y
+    ) < distance;
+  }
+
+  createPrompt(text, yOffset = -70, color = '#ddbbff') {
+    if (this.activePrompt) this.activePrompt.destroy();
+    this.activePrompt = this.add.text(this.player.x, this.player.y + yOffset, text, {
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: color,
+      letterSpacing: 2,
+      backgroundColor: '#000000',
+      padding: { x: 8, y: 4 }
+    }).setOrigin(0.5).setDepth(20).setScrollFactor(0);
+  }
+
+  showPhaseTitle(text) {
+    const title = this.add.text(GAME_W/2, 100, text, {
+      fontSize: '18px',
+      fontFamily: 'Courier New',
+      color: '#8866cc',
+      letterSpacing: 4
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(30);
+    
+    this.tweens.add({
+      targets: title,
+      alpha: 0,
+      duration: 2500,
+      delay: 1000,
+      onComplete: () => title.destroy()
+    });
+  }
+
+  transitionTo(sceneKey) {
+    this.transitioning = true;
+    if (this.activePrompt) this.activePrompt.destroy();
+    this.cameras.main.fadeOut(600, 0, 0, 0);
+    this.time.delayedCall(650, () => {
+      this.scene.start(sceneKey);
+    });
+  }
+
+  handleInteract() {}
+
+  update() {
+    if (this.transitioning) return;
+    
+    this.handleMovement();
+    this.drawPlayer();
+    
+    if (this.activePrompt) {
+      this.activePrompt.x = this.player.x;
+      this.activePrompt.y = this.player.y - 70;
+    }
   }
 }
 
-function updateDoorCounter(num) {
-  const el = document.getElementById('door-num');
-  if (el) el.textContent = String(num).padStart(3, '0');
-}
-
-function showPhaseTitle(text) {
-  const el = document.getElementById('phase-title');
-  if (!el) return;
-  el.textContent = text;
-  el.style.opacity = '1';
-  setTimeout(() => { el.style.opacity = '0'; }, 2500);
-}
-
 // =============================================
-//  CLASSE BootScene (TELA INICIAL)
+//  CENA: BOOT (TELA DE TÍTULO)
 // =============================================
 class BootScene extends Phaser.Scene {
   constructor() { super({ key: 'BootScene' }); }
 
-  preload() {
-    // Carrega o sprite do jogador
-    this.load.spritesheet('player_run', 'assets/player.png', {
-      frameWidth: 96,
-      frameHeight: 96
-    });
-  }
-
   create() {
-    // Cria as animações
-    if (this.textures.exists('player_run')) {
-      this.anims.create({
-        key: 'run',
-        frames: this.anims.generateFrameNumbers('player_run', { start: 0, end: 9 }),
-        frameRate: 12,
-        repeat: -1
-      });
-      this.anims.create({
-        key: 'idle',
-        frames: this.anims.generateFrameNumbers('player_run', { start: 1, end: 1 }),
-        frameRate: 1,
-        repeat: -1
-      });
-      this.anims.create({
-        key: 'jump',
-        frames: this.anims.generateFrameNumbers('player_run', { start: 4, end: 4 }),
-        frameRate: 1,
-        repeat: -1
-      });
-    }
-
     const g = this.add.graphics();
-
+    
     // Fundo
     g.fillStyle(COLORS.bg);
     g.fillRect(0, 0, GAME_W, GAME_H);
-
-    // Efeito vinheta
+    
+    // Vinheta
     for (let i = 0; i < 60; i++) {
-      const alpha = (i / 60) * 0.6;
-      g.lineStyle(2, 0x000000, alpha);
+      g.lineStyle(2, 0x000000, (i / 60) * 0.6);
       g.strokeRect(i, i, GAME_W - i*2, GAME_H - i*2);
     }
 
     // Título
-    const title = this.add.text(GAME_W/2, GAME_H/2 - 60, 'DOORS', {
+    this.add.text(GAME_W/2, GAME_H/2 - 60, 'DOORS', {
       fontSize: '72px',
       fontFamily: 'Courier New',
       color: '#c0aae8',
       letterSpacing: 20,
     }).setOrigin(0.5);
 
-    const subtitle = this.add.text(GAME_W/2, GAME_H/2 + 10, '-- BIRTHDAY EDITION --', {
+    this.add.text(GAME_W/2, GAME_H/2 + 10, '-- EDIÇÃO DE ANIVERSÁRIO --', {
       fontSize: '14px',
       fontFamily: 'Courier New',
       color: '#6655aa',
@@ -124,102 +298,66 @@ class BootScene extends Phaser.Scene {
       letterSpacing: 3,
     }).setOrigin(0.5);
 
-    // Animação da dica (piscando)
+    // Animação da dica
     this.tweens.add({
       targets: hint,
       alpha: 0.1,
       duration: 800,
       yoyo: true,
       repeat: -1,
-      ease: 'Sine.easeInOut'
     });
 
-    // Animação do título (brilho)
-    this.tweens.add({
-      targets: title,
-      alpha: 0.7,
-      duration: 1500,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut'
-    });
-
-    // Aguarda tecla para começar
     this.input.keyboard.once('keydown', () => {
       this.cameras.main.fadeOut(600, 0, 0, 0);
       this.time.delayedCall(620, () => this.scene.start('Phase1Scene'));
     });
   }
-
-  drawDoor(g, x, y, w, h, alpha) {
-    g.fillStyle(COLORS.doorFrame, alpha);
-    g.fillRect(x - w/2 - 4, y - h - 4, w + 8, h + 4);
-    g.fillStyle(COLORS.door, alpha * 1.5);
-    g.fillRect(x - w/2, y - h, w, h);
-    g.fillStyle(COLORS.doorGlow, alpha * 2);
-    g.fillCircle(x + w/2 - 5, y - h/2, 3);
-  }
 }
 
 // =============================================
-//  CLASSE Phase1Scene (TUTORIAL)
+//  CENA: FASE 1 - CORREDOR
 // =============================================
-class Phase1Scene extends Phaser.Scene {
-  constructor() { super({ key: 'Phase1Scene' }); }
+class Phase1Scene extends BaseScene {
+  constructor() { 
+    super('Phase1Scene'); 
+    this.worldWidth = 2400;
+  }
 
   create() {
-    currentDoor = 1;
-    updateDoorCounter(1);
-    showPhaseTitle('FASE 1 -- O CORREDOR');
-
-    this.cameras.main.fadeIn(800, 0, 0, 0);
-    this.cameras.main.setBackgroundColor('#0a0a0f');
-
-    // Limites do mundo (cenário rolável)
-    this.physics.world.setBounds(0, 0, 2400, GAME_H);
-    this.cameras.main.setBounds(0, 0, 2400, GAME_H);
-
+    super.create();
+    GameState.door = 1;
+    GameState.updateUI();
+    this.showPhaseTitle(TEXTS.PHASE_1);
+    
+    this.platforms = this.physics.add.staticGroup();
     this.buildLevel();
-    this.createPlayer();
-    this.createDoors();
-    this.createTorches();
-    this.createDecorations();
-    this.setupControls();
-
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-
-    // Textos de tutorial
-    this.tutorialTexts = [];
-    this.createTutorial();
-
-    // Colisões
+    this.createDoor();
+    this.createTutorials();
+    
     this.physics.add.collider(this.player, this.platforms);
-    this.physics.add.overlap(this.player, this.doorZones, this.enterDoor, null, this);
-
-    this.transitioning = false;
   }
 
   buildLevel() {
-    this.platforms = this.physics.add.staticGroup();
     const g = this.add.graphics();
-
-    const floorY = GAME_H - 60;
 
     // Chão principal
     g.fillStyle(COLORS.floor);
-    g.fillRect(0, floorY, 2400, 60);
+    g.fillRect(0, this.floorY, this.worldWidth, 60);
     g.fillStyle(COLORS.floorEdge);
-    g.fillRect(0, floorY, 2400, 4);
+    g.fillRect(0, this.floorY, this.worldWidth, 4);
+    
+    // Teto
     g.fillStyle(COLORS.wall);
-    g.fillRect(0, 0, 2400, floorY);
+    g.fillRect(0, 0, this.worldWidth, 30);
 
     // Física do chão
-    const floor = this.add.rectangle(1200, floorY + 30, 2400, 60).setVisible(false);
+    const floor = this.add.rectangle(this.worldWidth/2, this.floorY + 30, this.worldWidth, 60)
+      .setVisible(false);
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
-    // Plataformas flutuantes
-    const platData = [
+    // Plataformas
+    const platforms = [
       { x: 300, y: 340, w: 120 },
       { x: 520, y: 280, w: 100 },
       { x: 750, y: 320, w: 140 },
@@ -230,337 +368,136 @@ class Phase1Scene extends Phaser.Scene {
       { x: 2100, y: 250, w: 110 },
     ];
 
-    platData.forEach(p => {
-      // Desenho da plataforma
+    platforms.forEach(p => {
       g.fillStyle(COLORS.platform);
       g.fillRect(p.x, p.y, p.w, 16);
       g.fillStyle(COLORS.platformTop);
       g.fillRect(p.x, p.y, p.w, 3);
       
-      // Física da plataforma
       const plat = this.add.rectangle(p.x + p.w/2, p.y + 8, p.w, 16).setVisible(false);
       this.physics.add.existing(plat, true);
       this.platforms.add(plat);
     });
 
-    // Detalhes da parede
-    for (let x = 0; x < 2400; x += 200) {
+    // Decorações de parede
+    for (let x = 0; x < this.worldWidth; x += 200) {
       g.fillStyle(COLORS.wallDetail, 0.5);
-      g.fillRect(x, 30, 3, floorY - 30);
+      g.fillRect(x, 30, 3, this.floorY - 30);
     }
   }
 
-  createTorches() {
+  createDoor() {
+    const dx = 2300, dw = 55, dh = 95, dy = this.floorY - dh;
+
     const g = this.add.graphics();
-    const torchPositions = [80, 240, 480, 700, 950, 1150, 1400, 1650, 1900, 2150, 2350];
-    const floorY = GAME_H - 60;
+    g.fillStyle(COLORS.doorFrame);
+    g.fillRect(dx - 4, dy - 6, dw + 8, dh + 8);
+    g.fillStyle(COLORS.door);
+    g.fillRect(dx, dy, dw, dh);
+    g.fillStyle(COLORS.doorGlow);
+    g.fillCircle(dx + dw - 10, dy + dh/2, 4);
 
-    torchPositions.forEach(x => {
-      // Suporte da tocha
-      g.fillStyle(0x443333);
-      g.fillRect(x - 2, floorY - 140, 4, 30);
-      g.fillRect(x - 8, floorY - 145, 16, 4);
-      
-      // Chama
-      g.fillStyle(COLORS.torchGlow, 0.9);
-      g.fillCircle(x, floorY - 152, 7);
-      g.fillStyle(COLORS.torch, 0.8);
-      g.fillCircle(x, floorY - 155, 4);
+    this.add.text(dx + dw/2, dy - 18, '001', {
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: '#bb99ff',
+      letterSpacing: 2
+    }).setOrigin(0.5);
 
-      // Brilho animado
-      const glow = this.add.rectangle(x, GAME_H - 60 - 152, 30, 30, COLORS.torchGlow, 0.08);
-      this.tweens.add({
-        targets: glow,
-        alpha: { from: 0.03, to: 0.13 },
-        scaleX: { from: 0.8, to: 1.2 },
-        scaleY: { from: 0.8, to: 1.2 },
-        duration: Phaser.Math.Between(400, 700),
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut'
-      });
-    });
+    this.doorZone = this.add.zone(dx + dw/2, dy + dh/2, dw, dh);
+    this.physics.add.existing(this.doorZone, true);
   }
 
-  createDecorations() {
-    const g = this.add.graphics();
-    const floorY = GAME_H - 60;
-
-    // Quadros na parede
-    const paintingPositions = [160, 450, 820, 1100, 1450, 1750, 2050, 2300];
-    paintingPositions.forEach(x => {
-      g.lineStyle(3, COLORS.highlight, 0.5);
-      g.strokeRect(x, floorY - 200, 60, 80);
-      g.fillStyle(0x0d0d18, 0.8);
-      g.fillRect(x + 3, floorY - 197, 54, 74);
-    });
-
-    // Sombras no chão
-    for (let x = 100; x < 2400; x += 200) {
-      g.fillStyle(0x000000, 0.15);
-      g.fillEllipse(x, floorY + 5, 80, 10);
-    }
-  }
-
-  createDoors() {
-    this.doorZones = this.physics.add.staticGroup();
-    const floorY = GAME_H - 60;
-    const g = this.add.graphics();
-
-    const doors = [
-      { x: 2300, label: '001', locked: false },
+  createTutorials() {
+    const tutorials = [
+      { x: 80, y: GAME_H - 110, text: TEXTS.MOVE },
+      { x: 300, y: 300, text: TEXTS.JUMP },
+      { x: 700, y: GAME_H - 110, text: TEXTS.EXPLORE },
+      { x: 2200, y: GAME_H - 110, text: TEXTS.ENTER_DOOR }
     ];
 
-    doors.forEach(d => {
-      const dw = 55, dh = 95;
-      const dx = d.x, dy = floorY - dh;
-
-      // Moldura da porta
-      g.fillStyle(COLORS.doorFrame);
-      g.fillRect(dx - 4, dy - 6, dw + 8, dh + 8);
-      
-      // Porta
-      g.fillStyle(COLORS.door);
-      g.fillRect(dx, dy, dw, dh);
-      
-      // Detalhes
-      g.lineStyle(1, COLORS.highlight, 0.3);
-      g.strokeRect(dx + 5, dy + 5, dw - 10, (dh - 15) / 2);
-      g.strokeRect(dx + 5, dy + 10 + (dh - 15) / 2, dw - 10, (dh - 15) / 2 - 5);
-      
-      // Maçaneta
-      g.fillStyle(COLORS.doorGlow);
-      g.fillCircle(dx + dw - 10, dy + dh/2, 4);
-      
-      // Número da porta
-      this.add.text(dx + dw/2, dy - 18, d.label, {
-        fontSize: '11px',
+    tutorials.forEach(t => {
+      this.add.text(t.x, t.y, t.text, {
+        fontSize: '12px',
         fontFamily: 'Courier New',
-        color: '#8866cc',
-        letterSpacing: 2,
+        color: '#6666aa',
+        letterSpacing: 2
       }).setOrigin(0.5);
-
-      // Brilho animado
-      const glow = this.add.rectangle(dx + dw/2, dy + dh/2, dw + 20, dh + 20, COLORS.doorGlow, 0.06);
-      this.tweens.add({
-        targets: glow,
-        alpha: { from: 0.03, to: 0.10 },
-        duration: 1200,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut'
-      });
-
-      // Zona de colisão
-      const zone = this.add.rectangle(dx + dw/2, dy + dh/2, dw, dh).setVisible(false);
-      this.physics.add.existing(zone, true);
-      this.doorZones.add(zone);
-      zone.doorLabel = d.label;
     });
   }
 
-  createPlayer() {
-    const floorY = GAME_H - 60;
-    this.player = this.physics.add.sprite(80, floorY - 40, null);
-    this.player.setVisible(false);
-    this.player.body.setSize(24, 40);
-    this.player.body.setCollideWorldBounds(true);
-    this.player.body.setGravityY(700);
-    this.player.body.setMaxVelocityY(900);
-
-    this.playerGfx = this.add.graphics();
-    this.playerShadow = this.add.graphics();
-    this.drawPlayer(this.playerGfx, 0, 0, false);
-  }
-
-  drawPlayer(g, x, y, facingLeft) {
-    g.clear();
-    
-    // Corpo
-    g.fillStyle(COLORS.player);
-    g.fillRect(x - 10, y - 38, 20, 28);
-    
-    // Cabeça
-    g.fillRect(x - 9, y - 58, 18, 18);
-    
-    // Olhos
-    g.fillStyle(COLORS.playerEye);
-    const ex = facingLeft ? x - 5 : x + 2;
-    g.fillRect(ex, y - 53, 4, 4);
-    
-    // Pernas
-    g.fillStyle(COLORS.player, 0.8);
-    g.fillRect(x - 8, y - 10, 7, 12);
-    g.fillRect(x + 1, y - 10, 7, 12);
-    
-    // Braços
-    g.fillRect(x - 14, y - 36, 5, 20);
-    g.fillRect(x + 9, y - 36, 5, 20);
-    
-    // Detalhe da camisa
-    g.fillStyle(COLORS.highlight, 0.3);
-    g.fillRect(x - 8, y - 36, 16, 3);
-  }
-
-  createTutorial() {
-    const tips = [
-      { x: 80,  y: GAME_H - 110, text: '<- -> para mover' },
-      { x: 300, y: 300,          text: 'ESPAÇO ou ^ para pular' },
-      { x: 700, y: GAME_H - 110, text: 'Explore as salas...' },
-      { x: 2200, y: GAME_H - 110, text: 'E para entrar na porta' },
-    ];
-
-    tips.forEach(t => {
-      const txt = this.add.text(t.x, t.y, t.text, {
-        fontSize: '11px',
-        fontFamily: 'Courier New',
-        color: '#44445a',
-        letterSpacing: 1,
-      }).setOrigin(0.5);
-      this.tutorialTexts.push({ text: txt, baseX: t.x });
-    });
-  }
-
-  setupControls() {
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.keys = this.input.keyboard.addKeys({
-      left:   Phaser.Input.Keyboard.KeyCodes.A,
-      right:  Phaser.Input.Keyboard.KeyCodes.D,
-      jump:   Phaser.Input.Keyboard.KeyCodes.W,
-      action: Phaser.Input.Keyboard.KeyCodes.E,
-    });
-    this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.facingLeft = false;
-    this.isNearDoor = false;
-    this.doorPrompt = null;
-  }
-
-  enterDoor(player, door) {
+  handleInteract() {
     if (this.transitioning) return;
-    this.isNearDoor = true;
-    
-    if (!this.doorPrompt) {
-      this.doorPrompt = this.add.text(
-        this.player.x, this.player.y - 70, '[E] Entrar',
-        { fontSize: '15px', fontFamily: 'Courier New', color: '#ddbbff', letterSpacing: 2 }
-      ).setOrigin(0.5);
-    }
-    
-    if (Phaser.Input.Keyboard.JustDown(this.keys.action)) {
-      this.transitioning = true;
-      if (this.doorPrompt) { this.doorPrompt.destroy(); this.doorPrompt = null; }
-      this.cameras.main.fadeOut(600, 0, 0, 0);
-      this.time.delayedCall(650, () => {
-        currentDoor = 2;
-        updateDoorCounter(currentDoor);
-        this.scene.start('Phase2Scene');
-      });
+    if (this.isNear(this.doorZone)) {
+      this.transitionTo('Phase2Scene');
     }
   }
 
   update() {
-    if (this.transitioning) return;
-
-    const onGround = this.player.body.blocked.down;
-    const speed = 200;
-    let moving = false;
-
-    // Movimento horizontal
-    if (this.cursors.left.isDown || this.keys.left.isDown) {
-      this.player.body.setVelocityX(-speed);
-      this.facingLeft = true;
-      moving = true;
-    } else if (this.cursors.right.isDown || this.keys.right.isDown) {
-      this.player.body.setVelocityX(speed);
-      this.facingLeft = false;
-      moving = true;
-    } else {
-      this.player.body.setVelocityX(0);
-    }
-
-    // Pulo
-    const jumpPressed = this.cursors.up.isDown || this.keys.jump.isDown || this.spaceKey.isDown;
-    if (jumpPressed && onGround) {
-      this.player.body.setVelocityY(-480);
-    }
-
-    // Desenha o jogador
-    this.drawPlayer(this.playerGfx, this.player.x, this.player.y, this.facingLeft);
-
-    // Sombra
-    this.playerShadow.clear();
-    this.playerShadow.fillStyle(0x000000, 0.25);
-    this.playerShadow.fillEllipse(this.player.x, GAME_H - 62, 34, 10);
-
-    // Atualiza prompt da porta
-    this.isNearDoor = false;
-    if (this.doorPrompt) {
-      this.doorPrompt.x = this.player.x;
-      this.doorPrompt.y = this.player.y - 70;
+    super.update();
+    
+    if (this.isNear(this.doorZone) && !this.activePrompt) {
+      this.createPrompt(TEXTS.ENTER);
+    } else if (!this.isNear(this.doorZone) && this.activePrompt) {
+      this.activePrompt.destroy();
+      this.activePrompt = null;
     }
   }
 }
 
 // =============================================
-//  CLASSE Phase2Scene (JEREMIAH)
+//  CENA: FASE 2 - JEREMIAH
 // =============================================
-class Phase2Scene extends Phaser.Scene {
-  constructor() { super({ key: 'Phase2Scene' }); }
+class Phase2Scene extends BaseScene {
+  constructor() { 
+    super('Phase2Scene'); 
+    this.worldWidth = 2000;
+  }
 
   create() {
-    updateDoorCounter(2);
-    showPhaseTitle('FASE 2 -- Hi, Bells...');
-
-    this.cameras.main.fadeIn(800, 0, 0, 0);
-    this.cameras.main.setBackgroundColor('#070710');
-
-    this.physics.world.setBounds(0, 0, 2000, GAME_H);
-    this.cameras.main.setBounds(0, 0, 2000, GAME_H);
-
+    super.create();
+    GameState.door = 2;
+    GameState.updateUI();
+    this.showPhaseTitle(TEXTS.PHASE_2);
+    
+    this.platforms = this.physics.add.staticGroup();
+    this.wardrobes = [];
+    this.jeremiah = null;
+    this.jeremiahGfx = null;
+    this.jeremiahDir = 1;
+    this.jeremiahSpeed = 80;
+    this.jeremiahLooking = false;
+    this.hitCooldown = false;
+    this.inWardrobe = false;
+    
     this.buildLevel();
-    this.createPlayer();
     this.createJeremiah();
+    this.createWardrobes();
     this.createExitDoor();
-    this.setupControls();
-
+    
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.collider(this.jeremiah, this.platforms);
-    this.physics.add.overlap(this.player, this.exitZone, this.tryExitDoor, null, this);
-
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-
-    this.transitioning = false;
-    this.inWardrobe = false;
-    this.hitCooldown = false;
-    this.hidePrompt = null;
   }
 
   buildLevel() {
-    this.platforms = this.physics.add.staticGroup();
     const g = this.add.graphics();
-    const floorY = GAME_H - 60;
-
-    // Fundo escuro
     g.fillStyle(0x070710);
-    g.fillRect(0, 0, 2000, GAME_H);
+    g.fillRect(0, 0, this.worldWidth, GAME_H);
 
     // Chão
     g.fillStyle(0x111122);
-    g.fillRect(0, floorY, 2000, 60);
+    g.fillRect(0, this.floorY, this.worldWidth, 60);
     g.fillStyle(0x1a1a30);
-    g.fillRect(0, floorY, 2000, 3);
-
-    // Teto
-    g.fillStyle(0x050510);
-    g.fillRect(0, 0, 2000, 30);
+    g.fillRect(0, this.floorY, this.worldWidth, 3);
 
     // Física do chão
-    const floor = this.add.rectangle(1000, floorY + 30, 2000, 60).setVisible(false);
+    const floor = this.add.rectangle(this.worldWidth/2, this.floorY + 30, this.worldWidth, 60)
+      .setVisible(false);
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
     // Plataformas
-    const platData = [
+    const platforms = [
       { x: 200, y: 330, w: 120 },
       { x: 500, y: 270, w: 100 },
       { x: 800, y: 310, w: 140 },
@@ -569,131 +506,67 @@ class Phase2Scene extends Phaser.Scene {
       { x: 1700, y: 260, w: 110 },
     ];
 
-    platData.forEach(p => {
+    platforms.forEach(p => {
       g.fillStyle(0x161628);
-      g.fillRect(p.x, p.y, p.w, 14);
-      g.fillStyle(0x2a2848, 0.8);
-      g.fillRect(p.x, p.y, p.w, 3);
+      g.fillRect(p.x, p.y, p.w, 16);
       
-      const plat = this.add.rectangle(p.x + p.w/2, p.y + 7, p.w, 14).setVisible(false);
+      const plat = this.add.rectangle(p.x + p.w/2, p.y + 8, p.w, 16).setVisible(false);
       this.physics.add.existing(plat, true);
       this.platforms.add(plat);
     });
+  }
 
-    // Armários (esconderijos)
-    this.wardrobes = [];
-    const wardrobePos = [150, 600, 1000, 1500, 1850];
-    wardrobePos.forEach(x => {
+  createJeremiah() {
+    this.jeremiah = this.physics.add.sprite(900, this.floorY - 60)
+      .setVisible(false)
+      .setCollideWorldBounds(true);
+    
+    this.jeremiah.body.setSize(30, 60);
+    this.jeremiah.body.setGravityY(400);
+    
+    this.jeremiahGfx = this.add.graphics();
+  }
+
+  drawJeremiah() {
+    const x = this.jeremiah.x;
+    const y = this.jeremiah.y;
+    const g = this.jeremiahGfx;
+    
+    g.clear();
+    
+    const color = this.jeremiahLooking ? 0x88ff88 : 0x447744;
+    
+    g.fillStyle(color, this.jeremiahLooking ? 0.9 : 0.7);
+    g.fillRect(x - 12, y - 58, 24, 35);
+    g.fillRect(x - 10, y - 82, 20, 22);
+    
+    g.fillStyle(0xeeffee);
+    g.fillCircle(x - 4, y - 72, this.jeremiahLooking ? 5 : 3);
+    g.fillCircle(x + 4, y - 72, this.jeremiahLooking ? 5 : 3);
+    
+    g.fillStyle(0x00aa00);
+    g.fillCircle(x - 4, y - 72, this.jeremiahLooking ? 2 : 1);
+    g.fillCircle(x + 4, y - 72, this.jeremiahLooking ? 2 : 1);
+  }
+
+  createWardrobes() {
+    const g = this.add.graphics();
+    const positions = [150, 600, 1000, 1500, 1850];
+
+    positions.forEach(x => {
       g.fillStyle(0x2a1a1a);
-      g.fillRect(x, floorY - 80, 36, 80);
-      g.lineStyle(1, 0x553333, 0.8);
-      g.strokeRect(x, floorY - 80, 36, 80);
+      g.fillRect(x, this.floorY - 80, 36, 80);
       
-      const zone = this.add.zone(x + 18, floorY - 40, 50, 80);
+      const zone = this.add.zone(x + 18, this.floorY - 40, 50, 80);
       this.physics.add.existing(zone, true);
       this.wardrobes.push(zone);
     });
   }
 
-  createJeremiah() {
-    const floorY = GAME_H - 60;
-    this.jeremiah = this.physics.add.sprite(900, floorY - 60, null).setVisible(false);
-    this.jeremiah.body.setSize(30, 60);
-    this.jeremiah.setCollideWorldBounds(true);
-    this.jeremiah.body.setGravityY(400);
-
-    this.jeremiahGfx = this.add.graphics();
-    this.jeremiahDir = 1;
-    this.jeremiahSpeed = 80;
-    this.jeremiahLooking = false;
-
-    this.hibells = this.add.text(0, 0, '"Hi, Bells..."', {
-      fontSize: '13px',
-      fontFamily: 'Courier New',
-      color: '#aaffaa',
-      backgroundColor: '#0a1a0a',
-      padding: { x: 6, y: 4 }
-    }).setOrigin(0.5).setAlpha(0).setDepth(10);
-  }
-
-  drawJeremiah(x, y, isLooking) {
-    const g = this.jeremiahGfx;
-    g.clear();
-    
-    const color = isLooking ? 0x88ff88 : 0x447744;
-    
-    // Corpo
-    g.fillStyle(color, isLooking ? 0.9 : 0.7);
-    g.fillRect(x - 12, y - 58, 24, 35);
-    
-    // Cabeça
-    g.fillStyle(color, isLooking ? 1 : 0.8);
-    g.fillRect(x - 10, y - 82, 20, 22);
-    
-    // Olhos
-    g.fillStyle(0xeeffee);
-    g.fillCircle(x - 4, y - 72, isLooking ? 5 : 3);
-    g.fillCircle(x + 4, y - 72, isLooking ? 5 : 3);
-    
-    // Pupilas
-    g.fillStyle(0x00aa00);
-    g.fillCircle(x - 4, y - 72, isLooking ? 2 : 1);
-    g.fillCircle(x + 4, y - 72, isLooking ? 2 : 1);
-    
-    // Pernas
-    g.fillStyle(color, 0.7);
-    g.fillRect(x - 10, y - 22, 9, 22);
-    g.fillRect(x + 1, y - 22, 9, 22);
-    
-    // Braços
-    g.fillRect(x - 18, y - 56, 6, 28);
-    g.fillRect(x + 12, y - 56, 6, 28);
-  }
-
-  checkJeremiahLOS() {
-    if (this.inWardrobe) { 
-      this.jeremiahLooking = false; 
-      return; 
-    }
-
-    const jx = this.jeremiah.x;
-    const px = this.player.x;
-    const dy = Math.abs(this.player.y - this.jeremiah.y);
-
-    const facingRight = this.jeremiahDir > 0;
-    const playerInFront = facingRight ? (px > jx && px - jx < 220) : (px < jx && jx - px < 220);
-    const inRange = playerInFront && dy < 90;
-
-    if (inRange && !this.hitCooldown) {
-      this.jeremiahLooking = true;
-
-      this.hibells.setPosition(jx, this.jeremiah.y - 110).setAlpha(1);
-      this.tweens.killTweensOf(this.hibells);
-      this.tweens.add({ targets: this.hibells, alpha: 0, duration: 1000, delay: 1000 });
-
-      this.hitCooldown = true;
-      playerHealth = Math.max(0, playerHealth - 2);
-      updateHealthUI();
-
-      const flash = this.add.rectangle(GAME_W/2, GAME_H/2, GAME_W, GAME_H, 0x00ff00, 0.25).setScrollFactor(0).setDepth(25);
-      this.tweens.add({ targets: flash, alpha: 0, duration: 700, onComplete: () => flash.destroy() });
-
-      if (playerHealth <= 0) {
-        this.transitioning = true;
-        this.time.delayedCall(600, () => this.scene.start('GameOverScene'));
-      }
-
-      this.time.delayedCall(4000, () => { this.hitCooldown = false; });
-    } else if (!inRange) {
-      this.jeremiahLooking = false;
-    }
-  }
-
   createExitDoor() {
-    const floorY = GAME_H - 60;
-    const g = this.add.graphics();
-    const dx = 1900, dw = 55, dh = 95, dy = floorY - dh;
+    const dx = 1900, dw = 55, dh = 95, dy = this.floorY - dh;
 
+    const g = this.add.graphics();
     g.fillStyle(COLORS.doorFrame);
     g.fillRect(dx - 4, dy - 6, dw + 8, dh + 8);
     g.fillStyle(COLORS.door);
@@ -708,236 +581,186 @@ class Phase2Scene extends Phaser.Scene {
       letterSpacing: 2
     }).setOrigin(0.5);
 
-    const glow = this.add.rectangle(dx + dw/2, dy + dh/2, dw + 20, dh + 20, COLORS.doorGlow, 0.06);
-    this.tweens.add({ targets: glow, alpha: { from: 0.03, to: 0.10 }, duration: 1200, yoyo: true, repeat: -1 });
-
-    this.exitZone = this.add.rectangle(dx + dw/2, dy + dh/2, dw, dh).setVisible(false);
+    this.exitZone = this.add.zone(dx + dw/2, dy + dh/2, dw, dh);
     this.physics.add.existing(this.exitZone, true);
   }
 
-  tryExitDoor(player, door) {
-    if (this.transitioning) return;
-    
-    if (!this.exitPrompt) {
-      this.exitPrompt = this.add.text(
-        this.player.x, this.player.y - 70, '[E] Entrar',
-        { fontSize: '15px', fontFamily: 'Courier New', color: '#ddbbff', letterSpacing: 2 }
-      ).setOrigin(0.5).setDepth(10);
-    }
-    
-    if (Phaser.Input.Keyboard.JustDown(this.keys.action)) {
-      this.transitioning = true;
-      if (this.exitPrompt) { this.exitPrompt.destroy(); this.exitPrompt = null; }
-      this.cameras.main.fadeOut(600, 0, 0, 0);
-      this.time.delayedCall(650, () => {
-        currentDoor = 3;
-        updateDoorCounter(currentDoor);
-        this.scene.start('Phase3Scene');
-      });
-    }
-  }
-
-  createPlayer() {
-    const floorY = GAME_H - 60;
-    this.player = this.physics.add.sprite(80, floorY - 40, null).setVisible(false);
-    this.player.body.setSize(24, 40);
-    this.player.setCollideWorldBounds(true);
-    this.player.body.setGravityY(700);
-    this.player.body.setMaxVelocityY(900);
-    this.playerGfx = this.add.graphics().setDepth(5);
-  }
-
-  setupControls() {
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.keys = this.input.keyboard.addKeys({
-      left: Phaser.Input.Keyboard.KeyCodes.A,
-      right: Phaser.Input.Keyboard.KeyCodes.D,
-      jump: Phaser.Input.Keyboard.KeyCodes.W,
-      action: Phaser.Input.Keyboard.KeyCodes.E,
-    });
-    this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.facingLeft = false;
-    this.exitPrompt = null;
-  }
-
-  drawPlayer(x, y, facingLeft, inWardrobe) {
-    const g = this.playerGfx;
-    g.clear();
-    
-    if (inWardrobe) {
-      g.fillStyle(0x331111, 0.6);
-      g.fillRect(x - 6, y - 30, 12, 30);
+  checkJeremiah() {
+    if (this.inWardrobe) {
+      this.jeremiahLooking = false;
       return;
     }
+
+    const dx = Math.abs(this.player.x - this.jeremiah.x);
+    const dy = Math.abs(this.player.y - this.jeremiah.y);
     
-    g.fillStyle(COLORS.player);
-    g.fillRect(x - 10, y - 38, 20, 28);
-    g.fillRect(x - 9, y - 58, 18, 18);
-    g.fillStyle(COLORS.playerEye);
-    const ex = facingLeft ? x - 5 : x + 2;
-    g.fillRect(ex, y - 53, 4, 4);
-    g.fillStyle(COLORS.player, 0.8);
-    g.fillRect(x - 8, y - 10, 7, 12);
-    g.fillRect(x + 1, y - 10, 7, 12);
-    g.fillRect(x - 14, y - 36, 5, 20);
-    g.fillRect(x + 9, y - 36, 5, 20);
+    const facingRight = this.jeremiahDir > 0;
+    const playerInFront = facingRight ? 
+      (this.player.x > this.jeremiah.x) : 
+      (this.player.x < this.jeremiah.x);
+    
+    if (dx < 220 && dy < 90 && playerInFront && !this.hitCooldown) {
+      this.jeremiahLooking = true;
+      this.hitCooldown = true;
+      
+      if (GameState.damage(2)) {
+        this.transitionTo('GameOverScene');
+        return;
+      }
+      
+      this.time.delayedCall(4000, () => { this.hitCooldown = false; });
+    } else if (dx >= 220 || !playerInFront) {
+      this.jeremiahLooking = false;
+    }
+  }
+
+  handleInteract() {
+    if (this.transitioning) return;
+    
+    // Verificar armários
+    for (let w of this.wardrobes) {
+      if (this.isNear(w)) {
+        this.inWardrobe = !this.inWardrobe;
+        this.player.body.setAllowGravity(!this.inWardrobe);
+        if (this.inWardrobe) this.player.body.setVelocity(0, 0);
+        return;
+      }
+    }
+    
+    // Verificar saída
+    if (this.isNear(this.exitZone)) {
+      this.transitionTo('Phase3Scene');
+    }
   }
 
   update() {
+    super.update();
+    
     if (this.transitioning) return;
-
-    const onGround = this.player.body.blocked.down;
-    const speed = 200;
-
-    // Verifica se está perto de armário
-    let nearWardrobe = false;
-    this.wardrobes.forEach(w => {
-      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, w.x, w.y);
-      if (dist < 70) nearWardrobe = true;
-    });
-
-    // Mostra dica do armário
-    if (nearWardrobe && !this.wardrobeHint) {
-      this.wardrobeHint = this.add.text(this.player.x, this.player.y - 70, '[E] Entrar no armario',
-        { fontSize: '11px', fontFamily: 'Courier New', color: '#aa8866', letterSpacing: 1 }
-      ).setOrigin(0.5).setDepth(10);
-    } else if (!nearWardrobe && this.wardrobeHint) {
-      this.wardrobeHint.destroy(); this.wardrobeHint = null;
-    }
-    if (this.wardrobeHint) { 
-      this.wardrobeHint.x = this.player.x; 
-      this.wardrobeHint.y = this.player.y - 70; 
-    }
-
-    // Entrar/sair do armário
-    if (nearWardrobe && Phaser.Input.Keyboard.JustDown(this.keys.action)) {
-      this.inWardrobe = !this.inWardrobe;
-      this.player.body.setAllowGravity(!this.inWardrobe);
-      if (this.inWardrobe) this.player.body.setVelocity(0, 0);
-    }
-
-    // Movimento (se não estiver no armário)
+    
+    // Atualizar Jeremiah
     if (!this.inWardrobe) {
-      this.player.body.setAllowGravity(true);
-            if (this.cursors.left.isDown || this.keys.left.isDown) {
-        this.player.body.setVelocityX(-speed);
-        this.facingLeft = true;
-      } else if (this.cursors.right.isDown || this.keys.right.isDown) {
-        this.player.body.setVelocityX(speed);
-        this.facingLeft = false;
-      } else {
-        this.player.body.setVelocityX(0);
-      }
-      
-      if ((this.cursors.up.isDown || this.keys.jump.isDown || this.spaceKey.isDown) && onGround) {
-        this.player.body.setVelocityY(-480);
+      this.jeremiah.body.setVelocityX(this.jeremiahSpeed * this.jeremiahDir);
+      if (this.jeremiah.x > 1700 || this.jeremiah.x < 200) {
+        this.jeremiahDir *= -1;
+        this.jeremiah.x = Phaser.Math.Clamp(this.jeremiah.x, 201, 1699);
       }
     } else {
-      this.player.body.setAllowGravity(false);
-      this.player.body.setVelocity(0, 0);
+      this.jeremiah.body.setVelocityX(0);
     }
-
-    // Desenha o jogador
-    this.drawPlayer(this.player.x, this.player.y, this.facingLeft, this.inWardrobe);
-
-    // Movimento do Jeremiah
-    this.jeremiah.body.setVelocityX(this.jeremiahSpeed * this.jeremiahDir);
-    if (this.jeremiah.x > 1700 || this.jeremiah.x < 200) {
-      this.jeremiahDir *= -1;
-      this.jeremiah.x = this.jeremiah.x > 1700 ? 1699 : 201;
+    
+    this.drawJeremiah();
+    this.checkJeremiah();
+    
+    // Prompts
+    let nearWardrobe = false;
+    for (let w of this.wardrobes) {
+      if (this.isNear(w)) {
+        nearWardrobe = true;
+        break;
+      }
     }
-    this.drawJeremiah(this.jeremiah.x, this.jeremiah.y, this.jeremiahLooking);
-    this.checkJeremiahLOS();
-
-    // Atualiza prompts
-    if (this.exitPrompt) {
-      this.exitPrompt.x = this.player.x;
-      this.exitPrompt.y = this.player.y - 70;
-    }
-    if (this.hidePrompt) {
-      this.hidePrompt.x = this.player.x;
-      this.hidePrompt.y = this.player.y - 80;
+    
+    if (nearWardrobe && !this.activePrompt) {
+      this.createPrompt(this.inWardrobe ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70, '#44bbff');
+    } else if (this.isNear(this.exitZone) && !this.activePrompt && !nearWardrobe) {
+      this.createPrompt(TEXTS.ENTER);
+    } else if (!nearWardrobe && !this.isNear(this.exitZone) && this.activePrompt) {
+      this.activePrompt.destroy();
+      this.activePrompt = null;
     }
   }
 }
-
+  // =============================================
+//  CENA: FASE 3 - SALA DO SALMÃO
 // =============================================
-//  CLASSE Phase3Scene (SALA DO SALMÃO)
-// =============================================
-class Phase3Scene extends Phaser.Scene {
-  constructor() { super({ key: 'Phase3Scene' }); }
+class Phase3Scene extends BaseScene {
+  constructor() { 
+    super('Phase3Scene'); 
+    this.worldWidth = 1200;
+  }
 
   create() {
-    updateDoorCounter(3);
-    showPhaseTitle('FASE 3 -- A SALA DO SALMÃO');
-
-    this.cameras.main.fadeIn(800, 0, 0, 10);
-    this.cameras.main.setBackgroundColor('#0a1015');
-
-    this.physics.world.setBounds(0, 0, 1200, GAME_H);
-    this.cameras.main.setBounds(0, 0, 1200, GAME_H);
-
+    super.create();
+    GameState.door = 3;
+    GameState.updateUI();
+    this.showPhaseTitle(TEXTS.PHASE_3);
+    
+    // Configurações específicas da fase
     this.timeLeft = 30;
     this.keyFound = false;
     this.waterLevel = GAME_H + 100;
-    this.transitioning = false;
     this.gameActive = false;
-
+    this.waterRiseSpeed = 0.15;
+    
+    this.platforms = this.physics.add.staticGroup();
+    this.salmons = [];
+    
     this.buildRoom();
-    this.createPlayer();
     this.createHiddenKey();
     this.createWater();
     this.createExitDoor();
     this.createSalmons();
-    this.setupControls();
     this.createTimerUI();
-
+    
     this.physics.add.collider(this.player, this.platforms);
-    this.physics.add.overlap(this.player, this.keyItem, this.collectKey, null, this);
-    this.physics.add.overlap(this.player, this.exitZone, this.tryExit, null, this);
-
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-
+    this.physics.add.overlap(this.player, this.keyZone, this.collectKey, null, this);
+    
+    // Inicia a água após 2 segundos
     this.time.delayedCall(2000, () => {
       this.gameActive = true;
       this.startTimer();
     });
-
-    const warn = this.add.text(600, GAME_H/2 - 30, '(!) ENCONTRE A CHAVE ANTES QUE A ÁGUA SUBA!', {
-      fontSize: '14px', fontFamily: 'Courier New', color: '#55aaff',
-      letterSpacing: 2, align: 'center'
+    
+    // Aviso inicial
+    const warn = this.add.text(GAME_W/2, GAME_H/2 - 30, '(!) ENCONTRE A CHAVE ANTES QUE A ÁGUA SUBA!', {
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: '#55aaff',
+      letterSpacing: 2,
+      align: 'center',
+      backgroundColor: '#000000',
+      padding: { x: 10, y: 5 }
     }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
-    this.tweens.add({ targets: warn, alpha: 0, duration: 1000, delay: 1800, onComplete: () => warn.destroy() });
+    
+    this.tweens.add({
+      targets: warn,
+      alpha: 0,
+      duration: 1000,
+      delay: 1800,
+      onComplete: () => warn.destroy()
+    });
   }
 
   buildRoom() {
-    this.platforms = this.physics.add.staticGroup();
     const g = this.add.graphics();
-    const floorY = GAME_H - 60;
-
+    
+    // Fundo subaquático
     g.fillStyle(0x050d14);
-    g.fillRect(0, 0, 1200, GAME_H);
-
-    for (let i = 0; i < 40; i++) {
-      const bx = Phaser.Math.Between(20, 1180);
-      const by = Phaser.Math.Between(50, floorY - 20);
+    g.fillRect(0, 0, this.worldWidth, GAME_H);
+    
+    // Bolhas decorativas
+    for (let i = 0; i < 30; i++) {
+      const bx = Phaser.Math.Between(20, this.worldWidth - 20);
+      const by = Phaser.Math.Between(50, this.floorY - 20);
       g.fillStyle(0x1155aa, 0.15);
       g.fillCircle(bx, by, Phaser.Math.Between(2, 6));
     }
 
+    // Chão
     g.fillStyle(0x0d1e2a);
-    g.fillRect(0, floorY, 1200, 60);
+    g.fillRect(0, this.floorY, this.worldWidth, 60);
     g.fillStyle(0x1a3444);
-    g.fillRect(0, floorY, 1200, 3);
+    g.fillRect(0, this.floorY, this.worldWidth, 3);
 
-    g.fillStyle(0x050d14);
-    g.fillRect(0, 0, 1200, 30);
-
-    const floor = this.add.rectangle(600, floorY + 30, 1200, 60).setVisible(false);
+    // Física do chão
+    const floor = this.add.rectangle(this.worldWidth/2, this.floorY + 30, this.worldWidth, 60)
+      .setVisible(false);
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
-    const platData = [
+    // Plataformas
+    const platforms = [
       { x: 100, y: 350, w: 150 },
       { x: 350, y: 280, w: 120 },
       { x: 580, y: 200, w: 130 },
@@ -947,67 +770,44 @@ class Phase3Scene extends Phaser.Scene {
       { x: 700, y: 130, w: 100 },
     ];
 
-    platData.forEach(p => {
+    platforms.forEach(p => {
       g.fillStyle(0x122230);
-      g.fillRect(p.x, p.y, p.w, 14);
+      g.fillRect(p.x, p.y, p.w, 16);
       g.fillStyle(0x1e3a50);
       g.fillRect(p.x, p.y, p.w, 3);
       
-      const plat = this.add.rectangle(p.x + p.w/2, p.y + 7, p.w, 14).setVisible(false);
+      // Algas decorativas
+      g.fillStyle(0x0d4422, 0.7);
+      g.fillRect(p.x + 10, p.y - 15, 4, 15);
+      g.fillRect(p.x + 20, p.y - 22, 4, 22);
+      
+      const plat = this.add.rectangle(p.x + p.w/2, p.y + 8, p.w, 16).setVisible(false);
       this.physics.add.existing(plat, true);
       this.platforms.add(plat);
     });
 
-    g.fillStyle(0x080f18);
-    g.fillRect(0, 0, 20, GAME_H);
-    g.fillRect(1180, 0, 20, GAME_H);
+    // Coral decorativo
+    [80, 250, 500, 780, 1050].forEach(x => {
+      g.fillStyle(0x994422, 0.5);
+      g.fillRect(x, this.floorY - 30, 8, 30);
+      g.fillCircle(x + 4, this.floorY - 32, 10);
+    });
 
+    // Paredes laterais
     const wallL = this.add.rectangle(10, GAME_H/2, 20, GAME_H).setVisible(false);
     this.physics.add.existing(wallL, true);
     this.platforms.add(wallL);
-    const wallR = this.add.rectangle(1190, GAME_H/2, 20, GAME_H).setVisible(false);
+    
+    const wallR = this.add.rectangle(this.worldWidth - 10, GAME_H/2, 20, GAME_H).setVisible(false);
     this.physics.add.existing(wallR, true);
     this.platforms.add(wallR);
   }
 
-  createWater() {
-    this.waterGfx = this.add.graphics().setDepth(3);
-    this.waterLevel = GAME_H + 50;
-  }
-
-  updateWater() {
-    if (!this.gameActive) return;
-    
-    const elapsed = 30 - this.timeLeft;
-    const riseSpeed = 0.15 + elapsed * 0.03;
-    this.waterLevel -= riseSpeed;
-
-    const g = this.waterGfx;
-    g.clear();
-    
-    g.fillStyle(0x0044aa, 0.4);
-    g.fillRect(0, this.waterLevel, 1200, GAME_H - this.waterLevel + 100);
-    g.fillStyle(0x2266cc, 0.25);
-    g.fillRect(0, this.waterLevel, 1200, 6);
-    g.fillStyle(0x44aaff, 0.12);
-    g.fillRect(0, this.waterLevel + 3, 1200, 3);
-
-    if (this.player.y > this.waterLevel && !this.transitioning) {
-      this.transitioning = true;
-      playerHealth = Math.max(0, playerHealth - 1);
-      updateHealthUI();
-      this.cameras.main.fadeOut(600, 0, 20, 60);
-      this.time.delayedCall(650, () => {
-        if (playerHealth <= 0) this.scene.start('GameOverScene');
-        else this.scene.start('Phase3Scene');
-      });
-    }
-  }
-
   createHiddenKey() {
     const keyX = 720, keyY = 105;
-    const g = this.add.graphics().setDepth(4);
     
+    // Desenho da chave
+    const g = this.add.graphics().setDepth(4);
     g.fillStyle(0xffdd44, 0.9);
     g.fillCircle(keyX, keyY, 8);
     g.fillStyle(0xffaa00);
@@ -1016,41 +816,75 @@ class Phase3Scene extends Phaser.Scene {
     g.fillRect(keyX + 14, keyY + 4, 4, 4);
     g.fillRect(keyX + 18, keyY + 4, 4, 4);
 
+    // Brilho
     const glow = this.add.rectangle(keyX, keyY, 24, 24, 0xffdd44, 0.06).setDepth(3);
-    this.tweens.add({ targets: glow, alpha: { from: 0.02, to: 0.1 }, duration: 800, yoyo: true, repeat: -1 });
+    this.tweens.add({
+      targets: glow,
+      alpha: { from: 0.02, to: 0.1 },
+      duration: 800,
+      yoyo: true,
+      repeat: -1
+    });
 
-    const hint = this.add.text(keyX, keyY - 22, '?', {
-      fontSize: '14px', fontFamily: 'Courier New', color: '#443300', letterSpacing: 1
+    // Dica "?"
+    this.add.text(keyX, keyY - 22, '?', {
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: '#443300',
+      letterSpacing: 1
     }).setOrigin(0.5).setDepth(4);
 
-    this.keyItem = this.add.zone(keyX, keyY, 24, 24).setDepth(4);
-    this.physics.add.existing(this.keyItem, true);
+    // Zona de coleta
+    this.keyZone = this.add.zone(keyX, keyY, 24, 24).setDepth(4);
+    this.physics.add.existing(this.keyZone, true);
+    
     this.keyGfx = g;
-    this.keyHint = hint;
     this.keyGlow = glow;
   }
 
-  collectKey(player, key) {
-    if (this.keyFound) return;
-    this.keyFound = true;
-    this.keyGfx.destroy();
-    this.keyGlow.destroy();
-    this.keyHint.destroy();
+  createWater() {
+    this.waterGfx = this.add.graphics().setDepth(3);
+  }
 
-    const msg = this.add.text(600, GAME_H/2 - 20, '(ok) Chave encontrada! Vá para a saída!', {
-      fontSize: '13px', fontFamily: 'Courier New', color: '#ffdd44',
-      letterSpacing: 2, align: 'center'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
-    this.tweens.add({ targets: msg, alpha: 0, duration: 800, delay: 2000, onComplete: () => msg.destroy() });
+  updateWater() {
+    if (!this.gameActive || this.transitioning) return;
+    
+    // Água sobe cada vez mais rápido
+    const elapsed = 30 - this.timeLeft;
+    this.waterRiseSpeed = 0.15 + elapsed * 0.03;
+    this.waterLevel -= this.waterRiseSpeed;
 
-    this.tweens.add({ targets: this.exitGlow, alpha: 0.2, duration: 500 });
+    const g = this.waterGfx;
+    g.clear();
+    
+    // Corpo d'água
+    g.fillStyle(0x0044aa, 0.4);
+    g.fillRect(0, this.waterLevel, this.worldWidth, GAME_H - this.waterLevel + 100);
+    
+    // Superfície
+    g.fillStyle(0x2266cc, 0.25);
+    g.fillRect(0, this.waterLevel, this.worldWidth, 6);
+    g.fillStyle(0x44aaff, 0.12);
+    g.fillRect(0, this.waterLevel + 3, this.worldWidth, 3);
+
+    // Verifica afogamento
+    if (this.player.y > this.waterLevel && !this.transitioning) {
+      if (GameState.damage(1)) {
+        this.transitionTo('GameOverScene');
+      } else {
+        this.transitioning = true;
+        this.cameras.main.fadeOut(600, 0, 20, 60);
+        this.time.delayedCall(650, () => {
+          this.scene.restart();
+        });
+      }
+    }
   }
 
   createExitDoor() {
-    const floorY = GAME_H - 60;
-    const g = this.add.graphics().setDepth(2);
-    const dx = 1100, dw = 55, dh = 95, dy = floorY - dh;
+    const dx = 1100, dw = 55, dh = 95, dy = this.floorY - dh;
 
+    const g = this.add.graphics().setDepth(2);
     g.fillStyle(COLORS.doorFrame, 0.5);
     g.fillRect(dx - 4, dy - 6, dw + 8, dh + 8);
     g.fillStyle(COLORS.door, 0.5);
@@ -1061,87 +895,79 @@ class Phase3Scene extends Phaser.Scene {
     this.exitGlow = this.add.rectangle(dx + dw/2, dy + dh/2, dw + 20, dh + 20, COLORS.doorGlow, 0.04).setDepth(2);
 
     this.add.text(dx + dw/2, dy - 18, '003', {
-      fontSize: '11px', fontFamily: 'Courier New', color: '#8866cc', letterSpacing: 2
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: '#bb99ff',
+      letterSpacing: 2
     }).setOrigin(0.5).setDepth(5);
 
     this.exitZone = this.add.zone(dx + dw/2, dy + dh/2, dw, dh).setDepth(5);
     this.physics.add.existing(this.exitZone, true);
   }
 
-  tryExit(player, door) {
-    if (this.transitioning) return;
-    
-    if (!this.keyFound) {
-      if (!this.noKeyMsg) {
-        this.noKeyMsg = this.add.text(
-          this.player.x, this.player.y - 70, 'Precisa da chave!',
-          { fontSize: '15px', fontFamily: 'Courier New', color: '#ff6666', letterSpacing: 1 }
-        ).setOrigin(0.5).setDepth(20);
-        this.time.delayedCall(1500, () => { if (this.noKeyMsg) { this.noKeyMsg.destroy(); this.noKeyMsg = null; } });
-      }
-      return;
-    }
-    
-    if (!this.exitPrompt) {
-      this.exitPrompt = this.add.text(
-        this.player.x, this.player.y - 70, '[E] Sair!',
-        { fontSize: '12px', fontFamily: 'Courier New', color: '#ffdd44', letterSpacing: 2 }
-      ).setOrigin(0.5).setDepth(20);
-    }
-    
-    if (Phaser.Input.Keyboard.JustDown(this.keys.action)) {
-      this.transitioning = true;
-      if (this.exitPrompt) { this.exitPrompt.destroy(); this.exitPrompt = null; }
-      this.cameras.main.fadeOut(600, 0, 0, 0);
-      this.time.delayedCall(650, () => {
-        currentDoor = 4;
-        updateDoorCounter(currentDoor);
-        this.scene.start('Phase4Scene');
-      });
-    }
-  }
-
   createSalmons() {
-    this.salmons = [];
     this.salmonGfx = this.add.graphics().setDepth(4);
     const positions = [
-      { x: 200, dir: 1 }, { x: 500, dir: -1 }, { x: 800, dir: 1 }, { x: 1000, dir: -1 }
+      { x: 200, dir: 1 },
+      { x: 500, dir: -1 },
+      { x: 800, dir: 1 },
+      { x: 1000, dir: -1 }
     ];
     
     positions.forEach(p => {
-      const s = this.physics.add.sprite(p.x, GAME_H - 110, null).setVisible(false);
-      s.body.setSize(30, 14);
-      s.body.setAllowGravity(false);
-      s.body.setVelocityX(60 * p.dir);
-      s.dir = p.dir;
-      this.salmons.push(s);
+      const salmon = {
+        x: p.x,
+        y: GAME_H - 110,
+        dir: p.dir,
+        speed: 60
+      };
+      this.salmons.push(salmon);
     });
   }
 
-  drawSalmon(g, x, y, dir) {
-    const flip = dir < 0 ? -1 : 1;
-    g.fillStyle(0xff8866, 0.85);
-    g.fillEllipse(x, y, 30 * flip, 12);
-    g.fillTriangle(
-      x - 14 * flip, y,
-      x - 22 * flip, y - 8,
-      x - 22 * flip, y + 8
-    );
-    g.fillStyle(0xffffff);
-    g.fillCircle(x + 10 * flip, y - 1, 2);
-    g.fillStyle(0x220000);
-    g.fillCircle(x + 10 * flip, y - 1, 1);
+  drawSalmons() {
+    const g = this.salmonGfx;
+    g.clear();
+    
+    // Só mostra salmões quando a água cobre 30% da tela
+    const waterDepth = GAME_H - this.waterLevel;
+    if (waterDepth < GAME_H * 0.3) return;
+
+    this.salmons.forEach(s => {
+      // Move os salmões
+      s.x += s.speed * s.dir * 0.016; // 60fps adjustment
+      s.y = this.waterLevel + 30;
+      
+      // Inverte direção nas bordas
+      if (s.x > this.worldWidth - 30 || s.x < 30) {
+        s.dir *= -1;
+      }
+      
+      const flip = s.dir < 0 ? -1 : 1;
+      
+      // Desenha salmão
+      g.fillStyle(0xff8866, 0.85);
+      g.fillEllipse(s.x, s.y, 30 * flip, 12);
+      
+      g.fillTriangle(
+        s.x - 14 * flip, s.y,
+        s.x - 22 * flip, s.y - 8,
+        s.x - 22 * flip, s.y + 8
+      );
+      
+      g.fillStyle(0xffffff);
+      g.fillCircle(s.x + 10 * flip, s.y - 1, 2);
+      g.fillStyle(0x220000);
+      g.fillCircle(s.x + 10 * flip, s.y - 1, 1);
+    });
   }
 
   createTimerUI() {
-    this.timerText = this.add.text(GAME_W/2, 16, '30', {
-      fontSize: '22px', fontFamily: 'Courier New',
-      color: '#55aaff', letterSpacing: 4
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
-
-    this.timerLabel = this.add.text(GAME_W/2, 40, 'SEGUNDOS', {
-      fontSize: '10px', fontFamily: 'Courier New',
-      color: '#335577', letterSpacing: 3
+    this.timerText = this.add.text(GAME_W/2, 20, '30', {
+      fontSize: '22px',
+      fontFamily: 'Courier New',
+      color: '#55aaff',
+      letterSpacing: 4
     }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
   }
 
@@ -1150,736 +976,874 @@ class Phase3Scene extends Phaser.Scene {
       delay: 1000,
       callback: () => {
         if (!this.gameActive || this.transitioning) return;
+        
         this.timeLeft--;
         this.timerText.setText(String(this.timeLeft).padStart(2, '0'));
-        if (this.timeLeft <= 10) this.timerText.setColor('#ff5555');
+        
+        if (this.timeLeft <= 10) {
+          this.timerText.setColor('#ff5555');
+        }
+        
         if (this.timeLeft <= 0) {
           this.gameActive = false;
-          this.transitioning = true;
-          playerHealth = Math.max(0, playerHealth - 1);
-          updateHealthUI();
-          const flood = this.add.rectangle(600, GAME_H/2, GAME_W, GAME_H, 0x0044aa, 0).setScrollFactor(0).setDepth(30);
-          this.tweens.add({
-            targets: flood, alpha: 0.7, duration: 1000,
-            onComplete: () => {
-              this.cameras.main.fadeOut(500, 0, 20, 60);
-              this.time.delayedCall(550, () => {
-                if (playerHealth <= 0) this.scene.start('GameOverScene');
-                else this.scene.start('Phase3Scene');
-              });
-            }
-          });
+          
+          if (GameState.damage(1)) {
+            this.transitionTo('GameOverScene');
+          } else {
+            this.cameras.main.fadeOut(500, 0, 20, 60);
+            this.time.delayedCall(550, () => {
+              this.scene.restart();
+            });
+          }
         }
       },
       repeat: 29
     });
   }
 
-  createPlayer() {
-    const floorY = GAME_H - 60;
-    this.player = this.physics.add.sprite(80, floorY - 40, null).setVisible(false);
-    this.player.body.setSize(24, 40);
-    this.player.setCollideWorldBounds(true);
-    this.player.body.setGravityY(700);
-    this.player.body.setMaxVelocityY(900);
-    this.playerGfx = this.add.graphics().setDepth(5);
-  }
-
-  setupControls() {
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.keys = this.input.keyboard.addKeys({
-      left: Phaser.Input.Keyboard.KeyCodes.A,
-      right: Phaser.Input.Keyboard.KeyCodes.D,
-      jump: Phaser.Input.Keyboard.KeyCodes.W,
-      action: Phaser.Input.Keyboard.KeyCodes.E,
+  collectKey() {
+    if (this.keyFound) return;
+    
+    this.keyFound = true;
+    this.keyGfx.destroy();
+    this.keyGlow.destroy();
+    
+    // Mensagem de sucesso
+    const msg = this.add.text(GAME_W/2, GAME_H/2 - 20, TEXTS.KEY_FOUND, {
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: '#ffdd44',
+      letterSpacing: 2,
+      backgroundColor: '#000000',
+      padding: { x: 10, y: 5 }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
+    
+    this.tweens.add({
+      targets: msg,
+      alpha: 0,
+      duration: 800,
+      delay: 2000,
+      onComplete: () => msg.destroy()
     });
-    this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.facingLeft = false;
-    this.exitPrompt = null;
-    this.noKeyMsg = null;
+    
+    // Faz a porta brilhar
+    this.tweens.add({
+      targets: this.exitGlow,
+      alpha: 0.2,
+      duration: 500
+    });
   }
 
-  drawPlayer(x, y, fl) {
-    const g = this.playerGfx; g.clear();
-    g.fillStyle(COLORS.player); g.fillRect(x-10,y-38,20,28); g.fillRect(x-9,y-58,18,18);
-    g.fillStyle(COLORS.playerEye); g.fillRect(fl?x-5:x+2,y-53,4,4);
-    g.fillStyle(COLORS.player,0.8); g.fillRect(x-8,y-10,7,12); g.fillRect(x+1,y-10,7,12);
-    g.fillRect(x-14,y-36,5,20); g.fillRect(x+9,y-36,5,20);
+  handleInteract() {
+    if (this.transitioning) return;
+    
+    // Verificar saída
+    if (this.isNear(this.exitZone)) {
+      if (!this.keyFound) {
+        if (!this.noKeyMsg) {
+          this.noKeyMsg = this.add.text(GAME_W/2, GAME_H - 120, TEXTS.NEED_KEY, {
+            fontSize: '14px',
+            fontFamily: 'Courier New',
+            color: '#ff6666',
+            backgroundColor: '#000000',
+            padding: { x: 8, y: 4 }
+          }).setOrigin(0.5).setDepth(25).setScrollFactor(0);
+          
+          this.time.delayedCall(1500, () => {
+            if (this.noKeyMsg) {
+              this.noKeyMsg.destroy();
+              this.noKeyMsg = null;
+            }
+          });
+        }
+        return;
+      }
+      this.transitionTo('Phase4Scene');
+    }
   }
 
   update() {
+    super.update();
+    
     if (this.transitioning) return;
     
-    const onGround = this.player.body.blocked.down;
-    const speed = 200;
-
-    if (this.cursors.left.isDown || this.keys.left.isDown) {
-      this.player.body.setVelocityX(-speed); this.facingLeft = true;
-    } else if (this.cursors.right.isDown || this.keys.right.isDown) {
-      this.player.body.setVelocityX(speed); this.facingLeft = false;
-    } else {
-      this.player.body.setVelocityX(0);
+    this.updateWater();
+    this.drawSalmons();
+    
+    // Prompts
+    if (this.isNear(this.exitZone) && !this.activePrompt) {
+      this.createPrompt(this.keyFound ? TEXTS.ENTER : '🔒 Trancada', -70, this.keyFound ? '#ffdd44' : '#ff6666');
+    } else if (!this.isNear(this.exitZone) && this.activePrompt) {
+      this.activePrompt.destroy();
+      this.activePrompt = null;
     }
     
-    if ((this.cursors.up.isDown || this.keys.jump.isDown || this.spaceKey.isDown) && onGround) {
-      this.player.body.setVelocityY(-480);
+    if (this.noKeyMsg) {
+      this.noKeyMsg.x = GAME_W/2;
     }
-
-    this.drawPlayer(this.player.x, this.player.y, this.facingLeft);
-    this.updateWater();
-
-    this.salmonGfx.clear();
-    const waterDepth = GAME_H - this.waterLevel;
-    const showSalmons = waterDepth > GAME_H * 0.30;
-
-    if (showSalmons) {
-      this.salmons.forEach(s => {
-        const targetY = this.waterLevel + 30;
-        s.y = targetY;
-        s.body.reset(s.x, targetY);
-        if (s.x > 1180 || s.x < 30) {
-          s.dir *= -1;
-          s.body.setVelocityX(60 * s.dir);
-        }
-        this.drawSalmon(this.salmonGfx, s.x, s.y, s.dir);
-      });
-    }
-
-    if (this.exitPrompt) { this.exitPrompt.x = this.player.x; this.exitPrompt.y = this.player.y - 70; }
-    if (this.noKeyMsg) { this.noKeyMsg.x = this.player.x; this.noKeyMsg.y = this.player.y - 70; }
   }
 }
 
 // =============================================
-//  CLASSE Phase4Scene (ACADEMIA)
+//  CENA: FASE 4 - ACADEMIA
 // =============================================
-class Phase4Scene extends Phaser.Scene {
-  constructor() { super({ key: 'Phase4Scene' }); }
+class Phase4Scene extends BaseScene {
+  constructor() { 
+    super('Phase4Scene'); 
+    this.worldWidth = 2200;
+  }
 
   create() {
-    updateDoorCounter(4);
-    showPhaseTitle('FASE 4 -- ACADEMIA DAS TREVAS');
-    this.cameras.main.fadeIn(800, 0, 0, 0);
-    this.cameras.main.setBackgroundColor('#080810');
-    this.physics.world.setBounds(0, 0, 2200, GAME_H);
-    this.cameras.main.setBounds(0, 0, 2200, GAME_H);
-
-    this.transitioning = false;
-    this.mariaActive = false;
-    this.mariaCooldown = false;
+    super.create();
+    GameState.door = 4;
+    GameState.updateUI();
+    this.showPhaseTitle(TEXTS.PHASE_4);
+    
+    // Configurações específicas
     this.inLocker = false;
+    this.mariaCooldown = false;
     this.hitCooldown = false;
-
-    this.buildLevel();
-    this.createPlayer();
-    this.createObstacles();
-    this.createMaria();
-    this.createExitDoor();
-    this.setupControls();
-
-    this.physics.add.collider(this.player, this.platforms);
-    this.physics.add.overlap(this.player, this.weights, this.hitWeight, null, this);
-    this.physics.add.overlap(this.player, this.exitZone, this.tryExit, null, this);
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-
-    this.mariaTriggerXs = [400, 1100, 1800];
+    this.lockerXs = [139, 719, 1319, 1919];
+    this.mariaTriggerXs = [500, 1200, 1800];
     this.mariaTriggered = [false, false, false];
+    
+    this.platforms = this.physics.add.staticGroup();
+    this.weightData = [];
+    this.lockerZones = [];
+    
+    this.buildLevel();
+    this.createWeights();
+    this.createLockers();
+    this.createExitDoor();
+    
+    this.physics.add.collider(this.player, this.platforms);
+    
+    this.mariaGfx = this.add.graphics().setDepth(15);
   }
 
   buildLevel() {
-    this.platforms = this.physics.add.staticGroup();
     const g = this.add.graphics();
-    const floorY = GAME_H - 60;
-
-    g.fillStyle(0x080810); g.fillRect(0, 0, 2200, GAME_H);
     
-    for (let x = 0; x < 2200; x += 40) {
+    // Fundo
+    g.fillStyle(0x080810);
+    g.fillRect(0, 0, this.worldWidth, GAME_H);
+    
+    // Chão com padrão
+    for (let x = 0; x < this.worldWidth; x += 40) {
       g.fillStyle(x % 80 === 0 ? 0x111120 : 0x0e0e1c);
-      g.fillRect(x, floorY, 40, 60);
+      g.fillRect(x, this.floorY, 40, 60);
     }
-    g.fillStyle(0x2a2840); g.fillRect(0, floorY, 2200, 3);
+    
+    g.fillStyle(0x2a2840);
+    g.fillRect(0, this.floorY, this.worldWidth, 3);
 
-    g.fillStyle(0x060610); g.fillRect(0, 0, 2200, 30);
-
-    const floor = this.add.rectangle(1100, floorY+30, 2200, 60).setVisible(false);
+    // Física do chão
+    const floor = this.add.rectangle(this.worldWidth/2, this.floorY + 30, this.worldWidth, 60)
+      .setVisible(false);
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
-    const platData = [
-      {x:150, y:350, w:160}, {x:420, y:290, w:120},
-      {x:680, y:330, w:140}, {x:950, y:260, w:130},
-      {x:1200, y:310, w:150},{x:1480, y:270, w:120},
-      {x:1720, y:300, w:140},{x:1980, y:240, w:120},
+    // Plataformas
+    const platforms = [
+      {x:150,y:350,w:160}, {x:420,y:290,w:120}, {x:680,y:330,w:140},
+      {x:950,y:260,w:130}, {x:1200,y:310,w:150}, {x:1480,y:270,w:120},
+      {x:1720,y:300,w:140}, {x:1980,y:240,w:120}
     ];
 
-    platData.forEach(p => {
-      g.fillStyle(0x2a1a0a); g.fillRect(p.x, p.y, p.w, 16);
-      g.fillStyle(0x4a3010); g.fillRect(p.x, p.y, p.w, 3);
+    platforms.forEach(p => {
+      g.fillStyle(0x2a1a0a);
+      g.fillRect(p.x, p.y, p.w, 16);
+      g.fillStyle(0x4a3010);
+      g.fillRect(p.x, p.y, p.w, 3);
       
-      const pl = this.add.rectangle(p.x+p.w/2, p.y+8, p.w, 16).setVisible(false);
-      this.physics.add.existing(pl, true);
-      this.platforms.add(pl);
+      const plat = this.add.rectangle(p.x + p.w/2, p.y + 8, p.w, 16).setVisible(false);
+      this.physics.add.existing(plat, true);
+      this.platforms.add(plat);
+    });
+
+    // Tochas
+    [80,300,600,900,1200,1500,1800,2100].forEach(x => {
+      g.fillStyle(0x551100,0.7);
+      g.fillRect(x-2, this.floorY-130, 4, 25);
+      g.fillStyle(0xff4400,0.8);
+      g.fillCircle(x, this.floorY-138, 6);
     });
   }
 
-  createObstacles() {
-    this.weights = this.physics.add.staticGroup();
-    const g = this.add.graphics().setDepth(2);
-    const floorY = GAME_H - 60;
-
-    const weightPositions = [200, 500, 750, 1050, 1350, 1650, 1950];
-    this.movingWeights = [];
-
-    weightPositions.forEach((x, i) => {
-      g.fillStyle(0x333344); g.fillRect(x-18, floorY-6, 36, 12);
-      g.fillStyle(0x222233); g.fillRect(x-22, floorY-9, 8, 18); g.fillRect(x+14, floorY-9, 8, 18);
-      g.fillStyle(0x111122); g.fillCircle(x-18, floorY, 9); g.fillCircle(x+18, floorY, 9);
-
-      const w = this.add.zone(x, floorY-20, 44, 20);
-      this.physics.add.existing(w, false);
-      w.body.setAllowGravity(false);
-      w.body.setVelocityX(i % 2 === 0 ? 70 : -70);
-      w.body.setCollideWorldBounds(true);
-      w.body.setBounce(1, 0);
-      this.movingWeights.push({zone: w});
-      this.weights.add(w);
-    });
-  }
-
-  hitWeight(player, weight) {
-    if (this.transitioning || this.hitCooldown) return;
-    this.hitCooldown = true;
-    playerHealth = Math.max(0, playerHealth - 1);
-    updateHealthUI();
-    
-    const flash = this.add.rectangle(GAME_W/2, GAME_H/2, GAME_W, GAME_H, 0xff2200, 0.3).setScrollFactor(0).setDepth(25);
-    this.tweens.add({targets:flash, alpha:0, duration:400, onComplete:()=>flash.destroy()});
-    this.time.delayedCall(1500, () => { this.hitCooldown = false; });
-    
-    if (playerHealth <= 0) {
-      this.transitioning = true;
-      this.time.delayedCall(600, () => this.scene.start('GameOverScene'));
-    }
-  }
-
-  createMaria() {
-    this.mariaGfx = this.add.graphics().setDepth(15);
-    this.wardrobes = [];
-    const floorY = GAME_H - 60;
+  createLockers() {
     const g = this.add.graphics().setDepth(2);
     
-    [120, 700, 1300, 1900].forEach(x => {
-      g.fillStyle(0x112233); g.fillRect(x, floorY-85, 38, 85);
-      g.lineStyle(1, 0x224455, 0.9); g.strokeRect(x, floorY-85, 38, 85);
+    this.lockerXs.forEach(cx => {
+      const x = cx - 19;
+      g.fillStyle(0x1a2233);
+      g.fillRect(x, this.floorY-90, 38, 90);
+      g.lineStyle(2, 0x4488cc, 0.9);
+      g.strokeRect(x, this.floorY-90, 38, 90);
       
-      const zone = this.add.zone(x+19, floorY-42, 50, 85);
+      // Rótulo
+      this.add.text(cx, this.floorY-105, 'LOCKER', {
+        fontSize:'9px',
+        fontFamily:'Courier New',
+        color:'#4499dd',
+        letterSpacing:1
+      }).setOrigin(0.5).setDepth(3);
+      
+      // Zona de interação
+      const zone = this.add.zone(cx, this.floorY-45, 50, 80);
       this.physics.add.existing(zone, true);
-      this.wardrobes.push(zone);
+      this.lockerZones.push(zone);
     });
   }
 
-  drawMaria(x, y) {
-    const g = this.mariaGfx; g.clear(); g.setAlpha(1);
-    g.fillStyle(0xff00ff, 0.25); g.fillCircle(x, y-40, 55);
-    g.fillStyle(0xff44ff, 0.15); g.fillCircle(x, y-40, 70);
-    g.fillStyle(0xcc44cc); g.fillRect(x-13, y-55, 26, 36);
-    g.fillStyle(0xdd55dd); g.fillRect(x-10, y-78, 20, 24);
-    g.fillStyle(0x330033); g.fillRect(x-12, y-86, 24, 12);
-    g.fillStyle(0xffffff); g.fillCircle(x-5, y-68, 8); g.fillCircle(x+5, y-68, 8);
-    g.fillStyle(0xaa00aa); g.fillCircle(x-5, y-68, 5); g.fillCircle(x+5, y-68, 5);
-    g.fillStyle(0x000000); g.fillCircle(x-5, y-68, 2); g.fillCircle(x+5, y-68, 2);
-    g.fillStyle(0x993399); g.fillRect(x-10, y-19, 9, 20); g.fillRect(x+1, y-19, 9, 20);
+  createWeights() {
+    this.weightGfx = this.add.graphics().setDepth(2);
+    
+    [200,600,1000,1400,1800].forEach((x,i) => {
+      const weight = {
+        x: x,
+        y: this.floorY - 20,
+        dir: i % 2 === 0 ? 1 : -1,
+        speed: 60
+      };
+      this.weightData.push(weight);
+    });
   }
 
-  triggerMaria() {
-    if (this.mariaCooldown) return;
-    this.mariaCooldown = true;
-    const floorY = GAME_H - 60;
+  drawWeights() {
+    const g = this.weightGfx;
+    g.clear();
     
-    if (this.hidePrompt) this.hidePrompt.destroy();
-    this.hidePrompt = this.add.text(this.player.x, this.player.y-80, '(!) ENTRE NO LOCKER! [E]',
-      {fontSize:'12px', fontFamily:'Courier New', color:'#ff5555', letterSpacing:1}).setOrigin(0.5).setDepth(20);
-    
-    this.tweens.add({targets:this.hidePrompt, alpha:{from:1,to:0.3}, duration:300, yoyo:true, repeat:5,
-      onComplete:()=>{ if(this.hidePrompt){this.hidePrompt.destroy();this.hidePrompt=null;} }});
-    
-    this.drawMaria(this.player.x + 80, floorY - 50);
-    this.tweens.add({targets:this.mariaGfx, alpha:{from:1,to:0}, duration:2000,
-      onComplete:()=>{ this.mariaGfx.clear(); this.mariaCooldown=false; }});
-    
-    this.time.delayedCall(800, () => {
-      if (!this.inLocker && !this.hitCooldown) {
-        this.hitCooldown = true;
-        playerHealth = Math.max(0, playerHealth-1);
-        updateHealthUI();
-        this.time.delayedCall(1500, ()=>{this.hitCooldown=false;});
-        if (playerHealth <= 0) { this.transitioning=true; this.time.delayedCall(600,()=>this.scene.start('GameOverScene')); }
+    this.weightData.forEach(w => {
+      // Move os pesos
+      w.x += w.speed * w.dir * 0.016;
+      
+      if (w.x > this.worldWidth - 50 || w.x < 50) {
+        w.dir *= -1;
       }
+      
+      // Desenha peso
+      g.fillStyle(0x333344);
+      g.fillRect(w.x - 18, w.y - 6, 36, 12);
+      g.fillStyle(0x222233);
+      g.fillRect(w.x - 22, w.y - 9, 8, 18);
+      g.fillRect(w.x + 14, w.y - 9, 8, 18);
+      g.fillStyle(0x444466);
+      g.fillCircle(w.x - 18, w.y, 9);
+      g.fillCircle(w.x + 18, w.y, 9);
     });
   }
 
   createExitDoor() {
-    const floorY = GAME_H - 60;
+    const dx = 2100, dw = 55, dh = 95, dy = this.floorY - dh;
+
     const g = this.add.graphics().setDepth(2);
-    const dx=2100, dw=55, dh=95, dy=floorY-dh;
-    
-    g.fillStyle(COLORS.doorFrame); g.fillRect(dx-4,dy-6,dw+8,dh+8);
-    g.fillStyle(COLORS.door); g.fillRect(dx,dy,dw,dh);
-    g.fillStyle(COLORS.doorGlow); g.fillCircle(dx+dw-10,dy+dh/2,4);
-    
-    this.add.text(dx+dw/2,dy-18,'004',{fontSize:'11px',fontFamily:'Courier New',color:'#8866cc',letterSpacing:2}).setOrigin(0.5);
-    
-    const glow=this.add.rectangle(dx+dw/2,dy+dh/2,dw+20,dh+20,COLORS.doorGlow,0.06);
-    this.tweens.add({targets:glow,alpha:{from:0.03,to:0.10},duration:1200,yoyo:true,repeat:-1});
-    
-    this.exitZone=this.add.rectangle(dx+dw/2,dy+dh/2,dw,dh).setVisible(false);
-    this.physics.add.existing(this.exitZone,true);
+    g.fillStyle(COLORS.doorFrame);
+    g.fillRect(dx - 4, dy - 6, dw + 8, dh + 8);
+    g.fillStyle(COLORS.door);
+    g.fillRect(dx, dy, dw, dh);
+    g.fillStyle(COLORS.doorGlow);
+    g.fillCircle(dx + dw - 10, dy + dh/2, 4);
+
+    this.add.text(dx + dw/2, dy - 18, '004', {
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: '#bb99ff',
+      letterSpacing: 2
+    }).setOrigin(0.5);
+
+    this.exitZone = this.add.zone(dx + dw/2, dy + dh/2, dw, dh);
+    this.physics.add.existing(this.exitZone, true);
   }
 
-  tryExit(player, door) {
+  triggerMaria() {
+    if (this.mariaCooldown || this.inLocker) return;
+    
+    this.mariaCooldown = true;
+    
+    // Desenha Maria
+    const g = this.mariaGfx;
+    g.clear();
+    g.setAlpha(1);
+    
+    const mx = this.player.x + 80;
+    const my = this.floorY - 60;
+    
+    g.fillStyle(0x110011, 0.9);
+    g.fillRect(mx - 12, my - 55, 24, 35);
+    g.fillRect(mx - 9, my - 78, 18, 22);
+    
+    g.fillStyle(0xffffff);
+    g.fillCircle(mx - 4, my - 68, 7);
+    g.fillCircle(mx + 4, my - 68, 7);
+    
+    g.fillStyle(0x660066);
+    g.fillCircle(mx - 4, my - 68, 4);
+    g.fillCircle(mx + 4, my - 68, 4);
+    
+    // Animação de fade
+    this.tweens.add({
+      targets: this.mariaGfx,
+      alpha: 0,
+      duration: 2000,
+      onComplete: () => this.mariaGfx.clear()
+    });
+
+    // Aviso
+    const warn = this.add.text(GAME_W/2, GAME_H/2 - 20, '(!) ENTRE NO LOCKER!', {
+      fontSize: '16px',
+      fontFamily: 'Courier New',
+      color: '#ff5555',
+      letterSpacing: 2,
+      backgroundColor: '#000000',
+      padding: { x: 10, y: 5 }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(25);
+    
+    this.tweens.add({
+      targets: warn,
+      alpha: { from: 1, to: 0.3 },
+      duration: 300,
+      yoyo: true,
+      repeat: 6,
+      onComplete: () => warn.destroy()
+    });
+
+    // Dano se não se esconder
+    this.time.delayedCall(3000, () => {
+      if (!this.inLocker && !this.hitCooldown) {
+        this.hitCooldown = true;
+        
+        if (GameState.damage(1)) {
+          this.transitionTo('GameOverScene');
+        }
+        
+        this.time.delayedCall(2000, () => {
+          this.hitCooldown = false;
+        });
+      }
+      this.time.delayedCall(2000, () => {
+        this.mariaCooldown = false;
+      });
+    });
+  }
+
+  handleInteract() {
     if (this.transitioning) return;
-    if (!this.exitPrompt) {
-      this.exitPrompt=this.add.text(this.player.x,this.player.y-70,'[E] Entrar',
-        {fontSize:'12px',fontFamily:'Courier New',color:'#c0aae8',letterSpacing:2}).setOrigin(0.5).setDepth(10);
+    
+    // Verificar lockers
+    for (let locker of this.lockerZones) {
+      if (this.isNear(locker)) {
+        this.inLocker = !this.inLocker;
+        this.player.body.setAllowGravity(!this.inLocker);
+        if (this.inLocker) this.player.body.setVelocity(0, 0);
+        return;
+      }
     }
-    if (Phaser.Input.Keyboard.JustDown(this.keys.action)) {
-      this.transitioning=true;
-      if(this.exitPrompt){this.exitPrompt.destroy();this.exitPrompt=null;}
-      this.cameras.main.fadeOut(600,0,0,0);
-      this.time.delayedCall(650,()=>{ currentDoor=5; updateDoorCounter(5); this.scene.start('Phase5Scene'); });
+    
+    // Verificar saída
+    if (this.isNear(this.exitZone)) {
+      this.transitionTo('Phase5Scene');
     }
-  }
-
-  createPlayer() {
-    const floorY = GAME_H - 60;
-    this.player = this.physics.add.sprite(80, floorY-40, null).setVisible(false);
-    this.player.body.setSize(24,40); this.player.setCollideWorldBounds(true);
-    this.player.body.setGravityY(700); this.player.body.setMaxVelocityY(900);
-    this.playerGfx = this.add.graphics().setDepth(5);
-  }
-
-  setupControls() {
-    this.cursors=this.input.keyboard.createCursorKeys();
-    this.keys=this.input.keyboard.addKeys({left:Phaser.Input.Keyboard.KeyCodes.A,right:Phaser.Input.Keyboard.KeyCodes.D,jump:Phaser.Input.Keyboard.KeyCodes.W,action:Phaser.Input.Keyboard.KeyCodes.E});
-    this.spaceKey=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.facingLeft=false; this.exitPrompt=null;
-  }
-
-  drawPlayer(x,y,fl) {
-    const g=this.playerGfx; g.clear();
-    g.fillStyle(COLORS.player); g.fillRect(x-10,y-38,20,28); g.fillRect(x-9,y-58,18,18);
-    g.fillStyle(COLORS.playerEye); g.fillRect(fl?x-5:x+2,y-53,4,4);
-    g.fillStyle(COLORS.player,0.8); g.fillRect(x-8,y-10,7,12); g.fillRect(x+1,y-10,7,12);
-    g.fillRect(x-14,y-36,5,20); g.fillRect(x+9,y-36,5,20);
   }
 
   update() {
     if (this.transitioning) return;
     
-    const onGround=this.player.body.blocked.down;
-    const speed=200;
-
-    let nearLocker=false;
-    this.wardrobes.forEach(w=>{ if(Phaser.Math.Distance.Between(this.player.x,this.player.y,w.x,w.y)<70) nearLocker=true; });
-
-    if (nearLocker && !this.lockerHint) {
-      this.lockerHint = this.add.text(this.player.x, this.player.y - 70, '[E] Entrar no locker',
-        { fontSize: '11px', fontFamily: 'Courier New', color: '#aa8866', letterSpacing: 1 }
-      ).setOrigin(0.5).setDepth(10);
-    } else if (!nearLocker && this.lockerHint) {
-      this.lockerHint.destroy(); this.lockerHint = null;
-    }
-    if (this.lockerHint) { this.lockerHint.x = this.player.x; this.lockerHint.y = this.player.y - 70; }
-
-    if (nearLocker && Phaser.Input.Keyboard.JustDown(this.keys.action)) {
-      this.inLocker=!this.inLocker;
-      this.player.body.setAllowGravity(!this.inLocker);
-      if (this.inLocker) this.player.body.setVelocity(0,0);
-    }
-
-    if (!this.inLocker) {
-      if (this.cursors.left.isDown||this.keys.left.isDown){this.player.body.setVelocityX(-speed);this.facingLeft=true;}
-      else if (this.cursors.right.isDown||this.keys.right.isDown){this.player.body.setVelocityX(speed);this.facingLeft=false;}
-      else this.player.body.setVelocityX(0);
-      if ((this.cursors.up.isDown||this.keys.jump.isDown||this.spaceKey.isDown)&&onGround) this.player.body.setVelocityY(-480);
+    // Verifica se está em locker
+    if (this.inLocker) {
+      this.player.body.setVelocity(0, 0);
+      this.player.body.setAllowGravity(false);
+      
+      // Desenha silhueta no locker
+      const lockerX = this.lockerXs.find(lx => Math.abs(this.player.x - lx) < 60) || this.player.x;
+      this.playerGfx.clear();
+      this.playerGfx.fillStyle(0x112233, 0.7);
+      this.playerGfx.fillRect(lockerX - 8, this.player.y - 35, 16, 35);
     } else {
-      this.player.body.setVelocity(0,0);
+      this.player.body.setAllowGravity(true);
+      this.handleMovement();
+      this.drawPlayer();
+    }
+    
+    this.drawWeights();
+    
+    // Gatilhos da Maria
+    this.mariaTriggerXs.forEach((tx, i) => {
+      if (!this.mariaTriggered[i] && Math.abs(this.player.x - tx) < 50) {
+        this.mariaTriggered[i] = true;
+        this.triggerMaria();
+      }
+    });
+    
+    // Prompts
+    let nearLocker = false;
+    for (let locker of this.lockerZones) {
+      if (this.isNear(locker)) {
+        nearLocker = true;
+        break;
+      }
+    }
+    
+    if (nearLocker && !this.activePrompt) {
+      this.createPrompt(this.inLocker ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70, '#44bbff');
+    } else if (this.isNear(this.exitZone) && !this.activePrompt && !nearLocker) {
+      this.createPrompt(TEXTS.ENTER);
+    } else if (!nearLocker && !this.isNear(this.exitZone) && this.activePrompt) {
+      this.activePrompt.destroy();
+      this.activePrompt = null;
+    }
+  }
+}
+
+// =============================================
+//  CENA: FASE 5 - ARENA
+// =============================================
+class Phase5Scene extends BaseScene {
+  constructor() { 
+    super('Phase5Scene'); 
+    this.worldWidth = 1800;
+  }
+
+  create() {
+    super.create();
+    GameState.door = 5;
+    GameState.updateUI();
+    this.showPhaseTitle(TEXTS.PHASE_5);
+    
+    // Configurações específicas
+    this.inHiding = false;
+    this.hitCooldown = false;
+    this.mariaCooldown = false;
+    this.hideXs = [119, 869, 1669];
+    this.mariaTriggerXs = [450, 1200];
+    this.mariaTriggered = [false, false];
+    
+    this.platforms = this.physics.add.staticGroup();
+    this.enemies = [];
+    this.hideZones = [];
+    
+    this.buildLevel();
+    this.createEnemies();
+    this.createHideSpots();
+    this.createExitDoor();
+    
+    this.physics.add.collider(this.player, this.platforms);
+    this.physics.add.collider(this.enemies, this.platforms);
+    
+    this.mariaGfx = this.add.graphics().setDepth(15);
+  }
+
+  buildLevel() {
+    const g = this.add.graphics();
+    
+    // Fundo
+    g.fillStyle(0x050510);
+    g.fillRect(0, 0, this.worldWidth, GAME_H);
+    
+    // Chão xadrez
+    for(let x = 0; x < this.worldWidth; x += 50) {
+      for(let y = this.floorY; y < GAME_H; y += 50) {
+        g.fillStyle(((x + y) / 50) % 2 === 0 ? 0x0d0d20 : 0x0a0a18);
+        g.fillRect(x, y, 50, 50);
+      }
     }
 
-    this.drawPlayer(this.player.x, this.player.y, this.facingLeft);
+    // Física do chão
+    const floor = this.add.rectangle(this.worldWidth/2, this.floorY + 30, this.worldWidth, 60)
+      .setVisible(false);
+    this.physics.add.existing(floor, true);
+    this.platforms.add(floor);
 
+    // Plataformas
+    const platforms = [
+      {x:80,y:200,w:100}, {x:300,y:300,w:120}, {x:550,y:240,w:100},
+      {x:750,y:310,w:130}, {x:980,y:260,w:110}, {x:1200,y:290,w:120},
+      {x:1430,y:240,w:100}, {x:1650,y:200,w:100}
+    ];
+
+    platforms.forEach(p => {
+      g.fillStyle(0x161630);
+      g.fillRect(p.x, p.y, p.w, 16);
+      
+      const plat = this.add.rectangle(p.x + p.w/2, p.y + 8, p.w, 16).setVisible(false);
+      this.physics.add.existing(plat, true);
+      this.platforms.add(plat);
+    });
+
+    // Tochas azuis
+    [80,350,650,950,1250,1550,1750].forEach(x => {
+      g.fillStyle(0x221155,0.8);
+      g.fillRect(x-2, this.floorY-130, 4, 25);
+      g.fillStyle(0x6633ff,0.8);
+      g.fillCircle(x, this.floorY-138, 6);
+    });
+  }
+
+  createHideSpots() {
+    const g = this.add.graphics().setDepth(2);
+    
+    this.hideXs.forEach(cx => {
+      const x = cx - 19;
+      g.fillStyle(0x1a1a2a);
+      g.fillRect(x, this.floorY-85, 38, 85);
+      g.lineStyle(1, 0x334466, 0.9);
+      g.strokeRect(x, this.floorY-85, 38, 85);
+      
+      this.add.text(cx, this.floorY-98, 'ESCONDER', {
+        fontSize: '8px',
+        fontFamily: 'Courier New',
+        color: '#4466aa',
+        letterSpacing: 1
+      }).setOrigin(0.5);
+      
+      const zone = this.add.zone(cx, this.floorY-42, 50, 80);
+      this.physics.add.existing(zone, true);
+      this.hideZones.push(zone);
+    });
+  }
+
+  createEnemies() {
+    this.enemyGfx = this.add.graphics().setDepth(4);
+    
+    const enemyTypes = ['knight', 'giant', 'archer'];
+    const positions = [300, 600, 900, 1200, 1500];
+    
+    this.enemyList = positions.map((x, i) => ({
+      x: x,
+      y: this.floorY - 40,
+      type: enemyTypes[i % 3],
+      dir: Math.random() > 0.5 ? 1 : -1,
+      speed: 60,
+      hp: i % 3 === 1 ? 2 : 1 // giant tem 2 de vida
+    }));
+  }
+
+  drawEnemies() {
+    const g = this.enemyGfx;
+    g.clear();
+    
+    this.enemyList.forEach(e => {
+      // Move inimigo
+      e.x += e.speed * e.dir * 0.016;
+      
+      if (e.x > this.worldWidth - 50 || e.x < 50) {
+        e.dir *= -1;
+      }
+      
+      const flip = e.dir < 0 ? -1 : 1;
+      const x = e.x;
+      const y = e.y;
+      
+      if (e.type === 'knight') {
+        g.fillStyle(0x888899);
+        g.fillRect(x - 11, y - 38, 22, 28);
+        g.fillStyle(0xaaaacc);
+        g.fillRect(x - 10, y - 58, 20, 20);
+        g.fillStyle(0x444455);
+        g.fillRect(x - 9, y - 10, 8, 12);
+        g.fillRect(x + 1, y - 10, 8, 12);
+      } else if (e.type === 'giant') {
+        g.fillStyle(0x556644);
+        g.fillRect(x - 14, y - 40, 28, 34);
+        g.fillStyle(0x667755);
+        g.fillRect(x - 12, y - 62, 24, 22);
+        g.fillStyle(0x445533);
+        g.fillRect(x - 11, y - 10, 10, 14);
+        g.fillRect(x + 1, y - 10, 10, 14);
+      } else {
+        g.fillStyle(0x885533);
+        g.fillRect(x - 9, y - 38, 18, 28);
+        g.fillStyle(0x996644);
+        g.fillRect(x - 8, y - 58, 16, 20);
+        g.fillStyle(0x775522);
+        g.fillRect(x - 8, y - 10, 7, 12);
+        g.fillRect(x + 1, y - 10, 7, 12);
+      }
+    });
+  }
+
+  checkEnemyCollision() {
+    if (this.hitCooldown || this.inHiding) return;
+    
+    for (let e of this.enemyList) {
+      const dist = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y,
+        e.x, e.y
+      );
+      
+      if (dist < 40) {
+        this.hitCooldown = true;
+        
+        if (GameState.damage(1)) {
+          this.transitionTo('GameOverScene');
+          return;
+        }
+        
+        // Repulsão
+        const dir = this.player.x < e.x ? -1 : 1;
+        this.player.body.setVelocityX(dir * 300);
+        this.player.body.setVelocityY(-200);
+        
+        this.time.delayedCall(1200, () => {
+          this.hitCooldown = false;
+        });
+        
+        break;
+      }
+    }
+  }
+
+  createExitDoor() {
+    const dx = 1700, dw = 55, dh = 95, dy = this.floorY - dh;
+
+    const g = this.add.graphics().setDepth(2);
+    g.fillStyle(COLORS.doorFrame);
+    g.fillRect(dx - 4, dy - 6, dw + 8, dh + 8);
+    g.fillStyle(COLORS.door);
+    g.fillRect(dx, dy, dw, dh);
+    g.fillStyle(COLORS.doorGlow);
+    g.fillCircle(dx + dw - 10, dy + dh/2, 4);
+
+    this.add.text(dx + dw/2, dy - 18, '005', {
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: '#bb99ff',
+      letterSpacing: 2
+    }).setOrigin(0.5);
+
+    this.exitZone = this.add.zone(dx + dw/2, dy + dh/2, dw, dh);
+    this.physics.add.existing(this.exitZone, true);
+  }
+
+  triggerMaria() {
+    if (this.mariaCooldown || this.inHiding) return;
+    
+    this.mariaCooldown = true;
+    
+    // Desenha Maria
+    const g = this.mariaGfx;
+    g.clear();
+    g.setAlpha(1);
+    
+    const mx = this.player.x + 80;
+    const my = this.floorY - 60;
+    
+    g.fillStyle(0xff00ff, 0.25);
+    g.fillCircle(mx, my - 40, 55);
+    g.fillStyle(0xcc44cc);
+    g.fillRect(mx - 13, my - 55, 26, 36);
+    g.fillRect(mx - 10, my - 78, 20, 24);
+    g.fillStyle(0xffffff);
+    g.fillCircle(mx - 5, my - 68, 8);
+    g.fillCircle(mx + 5, my - 68, 8);
+    
+    this.tweens.add({
+      targets: this.mariaGfx,
+      alpha: 0,
+      duration: 2000,
+      onComplete: () => this.mariaGfx.clear()
+    });
+
+    // Aviso
+    const warn = this.add.text(GAME_W/2, GAME_H/2 - 20, '(!) ESCONDA-SE!', {
+      fontSize: '16px',
+      fontFamily: 'Courier New',
+      color: '#ff5555',
+      letterSpacing: 2,
+      backgroundColor: '#000000',
+      padding: { x: 10, y: 5 }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(25);
+    
+    this.tweens.add({
+      targets: warn,
+      alpha: { from: 1, to: 0.3 },
+      duration: 300,
+      yoyo: true,
+      repeat: 6,
+      onComplete: () => warn.destroy()
+    });
+
+    // Dano se não se esconder
+    this.time.delayedCall(2000, () => {
+      if (!this.inHiding && !this.hitCooldown) {
+        this.hitCooldown = true;
+        
+        if (GameState.damage(1)) {
+          this.transitionTo('GameOverScene');
+        }
+        
+        this.time.delayedCall(1500, () => {
+          this.hitCooldown = false;
+        });
+      }
+      this.time.delayedCall(2000, () => {
+        this.mariaCooldown = false;
+      });
+    });
+  }
+
+  handleInteract() {
+    if (this.transitioning) return;
+    
+    // Verificar esconderijos
+    for (let hide of this.hideZones) {
+      if (this.isNear(hide)) {
+        this.inHiding = !this.inHiding;
+        this.player.body.setAllowGravity(!this.inHiding);
+        if (this.inHiding) this.player.body.setVelocity(0, 0);
+        return;
+      }
+    }
+    
+    // Verificar saída
+    if (this.isNear(this.exitZone)) {
+      this.transitionTo('FinalScene');
+    }
+  }
+
+  update() {
+    if (this.transitioning) return;
+    
+    // Verifica se está escondido
+    if (this.inHiding) {
+      this.player.body.setVelocity(0, 0);
+      this.player.body.setAllowGravity(false);
+      
+      // Desenha silhueta
+      const hideX = this.hideXs.find(hx => Math.abs(this.player.x - hx) < 50) || this.player.x;
+      this.playerGfx.clear();
+      this.playerGfx.fillStyle(0x112233, 0.7);
+      this.playerGfx.fillRect(hideX - 8, this.player.y - 35, 16, 35);
+    } else {
+      this.player.body.setAllowGravity(true);
+      this.handleMovement();
+      this.drawPlayer();
+      this.checkEnemyCollision();
+    }
+    
+    this.drawEnemies();
+    
+    // Gatilhos da Maria
     this.mariaTriggerXs.forEach((tx, i) => {
       if (!this.mariaTriggered[i] && Math.abs(this.player.x - tx) < 40) {
         this.mariaTriggered[i] = true;
         this.triggerMaria();
       }
     });
-
-    if(this.exitPrompt){this.exitPrompt.x=this.player.x;this.exitPrompt.y=this.player.y-70;}
-    if(this.hidePrompt){this.hidePrompt.x=this.player.x;this.hidePrompt.y=this.player.y-80;}
+    
+    // Prompts
+    let nearHide = false;
+    for (let hide of this.hideZones) {
+      if (this.isNear(hide)) {
+        nearHide = true;
+        break;
+      }
+    }
+    
+    if (nearHide && !this.activePrompt) {
+      this.createPrompt(this.inHiding ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70, '#44bbff');
+    } else if (this.isNear(this.exitZone) && !this.activePrompt && !nearHide) {
+      this.createPrompt(TEXTS.ENTER);
+    } else if (!nearHide && !this.isNear(this.exitZone) && this.activePrompt) {
+      this.activePrompt.destroy();
+      this.activePrompt = null;
+    }
   }
 }
 
 // =============================================
-//  CLASSE Phase5Scene (ARENA)
+//  CENA: FASE FINAL - BIBLIOTECA
 // =============================================
-class Phase5Scene extends Phaser.Scene {
-  constructor() { super({ key: 'Phase5Scene' }); }
+class FinalScene extends BaseScene {
+  constructor() { 
+    super('FinalScene'); 
+    this.worldWidth = GAME_W;
+  }
 
   create() {
-    updateDoorCounter(5);
-    showPhaseTitle('FASE 5 -- A ARENA');
-    this.cameras.main.fadeIn(800, 0, 0, 0);
-    this.cameras.main.setBackgroundColor('#050510');
-    this.physics.world.setBounds(0, 0, 1800, GAME_H);
-    this.cameras.main.setBounds(0, 0, 1800, GAME_H);
-    this.transitioning = false;
-    this.hitCooldown = false;
-    this.inHiding = false;
-
-    this.buildLevel();
-    this.createPlayer();
-    this.createEnemies();
-    this.createMaria();
-    this.createExitDoor();
-    this.setupControls();
-
-    this.physics.add.collider(this.player, this.platforms);
-    this.physics.add.collider(this.enemies, this.platforms);
-    this.physics.add.overlap(this.player, this.enemies, this.hitEnemy, null, this);
-    this.physics.add.overlap(this.player, this.exitZone, this.tryExit, null, this);
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-
-    this.mariaTriggerXs = [450, 1200];
-    this.mariaTriggered = [false, false];
-  }
-
-  buildLevel() {
-    this.platforms = this.physics.add.staticGroup();
-    const g = this.add.graphics();
-    const floorY = GAME_H - 60;
-
-    g.fillStyle(0x050510); g.fillRect(0, 0, 1800, GAME_H);
+    super.create();
+    GameState.door = 100;
+    GameState.updateUI();
+    this.showPhaseTitle(TEXTS.PHASE_FINAL);
     
-    for(let x=0;x<1800;x+=50) for(let y=floorY;y<GAME_H;y+=50) {
-      g.fillStyle(((x+y)/50)%2===0?0x0d0d20:0x0a0a18); g.fillRect(x,y,50,50);
-    }
-    g.fillStyle(0x3322aa,0.3); g.fillRect(0,floorY,1800,3);
-    g.fillStyle(0x060610); g.fillRect(0,0,1800,30);
-
-    const floor=this.add.rectangle(900,floorY+30,1800,60).setVisible(false);
-    this.physics.add.existing(floor,true); this.platforms.add(floor);
-
-    const platData=[
-      {x:80,y:200,w:100,tower:true},{x:300,y:300,w:120},{x:550,y:240,w:100},
-      {x:750,y:310,w:130},{x:980,y:260,w:110},{x:1200,y:290,w:120},
-      {x:1430,y:240,w:100},{x:1650,y:200,w:100,tower:true}
-    ];
-
-    platData.forEach(p=>{
-      if(p.tower) {
-        g.fillStyle(0x1a1a3a); g.fillRect(p.x,p.y,p.w,GAME_H-60-p.y);
-        g.fillStyle(0x2a2a5a); g.fillRect(p.x,p.y,p.w,16);
-      } else {
-        g.fillStyle(0x161630); g.fillRect(p.x,p.y,p.w,14);
-        g.fillStyle(0x2a2a55,0.8); g.fillRect(p.x,p.y,p.w,3);
-      }
-      const pl=this.add.rectangle(p.x+p.w/2,p.y+8,p.w,16).setVisible(false);
-      this.physics.add.existing(pl,true); this.platforms.add(pl);
-    });
-  }
-
-  createEnemies() {
-    this.enemies = this.physics.add.group();
-    this.enemyGfxList = [];
-    const floorY = GAME_H - 60;
-
-    const enemyData = [
-      {x:300, type:'knight', speed:60, hp:1},
-      {x:600, type:'giant',  speed:35, hp:2},
-      {x:900, type:'archer', speed:80, hp:1},
-      {x:1200,type:'knight', speed:60, hp:1},
-      {x:1500,type:'giant',  speed:35, hp:2},
-    ];
-
-    this.enemyList = enemyData.map(e => {
-      const sprite = this.physics.add.sprite(e.x, floorY-40, null).setVisible(false);
-      sprite.body.setSize(28, 40); sprite.setCollideWorldBounds(true);
-      sprite.body.setGravityY(700); sprite.body.setMaxVelocityY(900);
-      sprite.body.setVelocityX(e.speed * (Math.random()>0.5?1:-1));
-      sprite.eType = e.type; sprite.hp = e.hp; sprite.dir = 1; sprite.speed = e.speed;
-      const gfx = this.add.graphics().setDepth(4);
-      this.enemyGfxList.push(gfx);
-      this.enemies.add(sprite);
-      return {sprite, gfx, ...e};
-    });
-  }
-
-  drawEnemy(g, x, y, type, dir) {
-    g.clear();
-    const flip = dir < 0 ? -1 : 1;
-    if (type === 'knight') {
-      g.fillStyle(0x888899); g.fillRect(x-11,y-38,22,28);
-      g.fillStyle(0xaaaacc); g.fillRect(x-10,y-58,20,20);
-      g.fillStyle(0x666677); g.fillRect(x-10,y-62,20,8);
-      g.fillStyle(0xccccee,0.9); g.fillRect(x-3*flip,y-55,6,8);
-      g.fillStyle(0x444455); g.fillRect(x-9,y-10,8,12); g.fillRect(x+1,y-10,8,12);
-      g.fillStyle(0x999aaa); g.fillRect(x+9*flip,y-38,8,22);
-    } else if (type === 'giant') {
-      g.fillStyle(0x556644); g.fillRect(x-14,y-40,28,34);
-      g.fillStyle(0x667755); g.fillRect(x-12,y-62,24,22);
-      g.fillStyle(0x223322); g.fillRect(x-12,y-65,24,8);
-      g.fillStyle(0x445533); g.fillRect(x-11,y-10,10,14); g.fillRect(x+1,y-10,10,14);
-      g.fillStyle(0x334422); g.fillRect(x-18,y-38,6,25); g.fillRect(x+12,y-38,6,25);
-    } else {
-      g.fillStyle(0x885533); g.fillRect(x-9,y-38,18,28);
-      g.fillStyle(0x996644); g.fillRect(x-8,y-58,16,20);
-      g.fillStyle(0x553322); g.fillRect(x-8,y-62,16,8);
-      g.fillStyle(0x775522); g.fillRect(x-8,y-10,7,12); g.fillRect(x+1,y-10,7,12);
-    }
-  }
-
-  createMaria() {
-    this.mariaGfx = this.add.graphics().setDepth(15);
-    this.wardrobes = [];
-    const floorY = GAME_H - 60;
-    const g = this.add.graphics().setDepth(2);
-    
-    [100, 850, 1650].forEach(x => {
-      g.fillStyle(0x1a1a2a); g.fillRect(x,floorY-85,38,85);
-      g.lineStyle(1,0x334466,0.9); g.strokeRect(x,floorY-85,38,85);
-      
-      const zone=this.add.zone(x+19,floorY-42,50,85);
-      this.physics.add.existing(zone,true); this.wardrobes.push(zone);
-    });
-    this.inHiding=false; this.hidePrompt=null;
-  }
-
-  drawMaria(x,y){
-    const g=this.mariaGfx;g.clear();g.setAlpha(1);
-    g.fillStyle(0xff00ff,0.25);g.fillCircle(x,y-40,55);
-    g.fillStyle(0xff44ff,0.15);g.fillCircle(x,y-40,70);
-    g.fillStyle(0xcc44cc);g.fillRect(x-13,y-55,26,36);
-    g.fillStyle(0xdd55dd);g.fillRect(x-10,y-78,20,24);
-    g.fillStyle(0x330033);g.fillRect(x-12,y-86,24,12);
-    g.fillStyle(0xffffff);g.fillCircle(x-5,y-68,8);g.fillCircle(x+5,y-68,8);
-    g.fillStyle(0xaa00aa);g.fillCircle(x-5,y-68,5);g.fillCircle(x+5,y-68,5);
-    g.fillStyle(0x000000);g.fillCircle(x-5,y-68,2);g.fillCircle(x+5,y-68,2);
-    g.fillStyle(0x993399);g.fillRect(x-10,y-19,9,20);g.fillRect(x+1,y-19,9,20);
-  }
-
-  hitEnemy(player, enemySprite) {
-    if (this.transitioning || this.hitCooldown) return;
-    this.hitCooldown = true;
-    playerHealth = Math.max(0, playerHealth-1);
-    updateHealthUI();
-    
-    const dir = player.x < enemySprite.x ? -1 : 1;
-    player.body.setVelocityX(dir * 300);
-    player.body.setVelocityY(-200);
-    
-    const flash=this.add.rectangle(GAME_W/2,GAME_H/2,GAME_W,GAME_H,0xff2200,0.3).setScrollFactor(0).setDepth(25);
-    this.tweens.add({targets:flash,alpha:0,duration:400,onComplete:()=>flash.destroy()});
-    this.time.delayedCall(1200,()=>{this.hitCooldown=false;});
-    
-    if (playerHealth<=0){this.transitioning=true;this.time.delayedCall(600,()=>this.scene.start('GameOverScene'));}
-  }
-
-  createExitDoor() {
-    const floorY=GAME_H-60;
-    const g=this.add.graphics().setDepth(2);
-    const dx=1700,dw=55,dh=95,dy=floorY-dh;
-    
-    g.fillStyle(COLORS.doorFrame);g.fillRect(dx-4,dy-6,dw+8,dh+8);
-    g.fillStyle(COLORS.door);g.fillRect(dx,dy,dw,dh);
-    g.fillStyle(COLORS.doorGlow);g.fillCircle(dx+dw-10,dy+dh/2,4);
-    
-    this.add.text(dx+dw/2,dy-18,'005',{fontSize:'11px',fontFamily:'Courier New',color:'#8866cc',letterSpacing:2}).setOrigin(0.5);
-    
-    const glow=this.add.rectangle(dx+dw/2,dy+dh/2,dw+20,dh+20,COLORS.doorGlow,0.06);
-    this.tweens.add({targets:glow,alpha:{from:0.03,to:0.10},duration:1200,yoyo:true,repeat:-1});
-    
-    this.exitZone=this.add.rectangle(dx+dw/2,dy+dh/2,dw,dh).setVisible(false);
-    this.physics.add.existing(this.exitZone,true);
-  }
-
-  tryExit(player,door) {
-    if(this.transitioning)return;
-    if(!this.exitPrompt){
-      this.exitPrompt=this.add.text(this.player.x,this.player.y-70,'[E] Entrar',
-        {fontSize:'12px',fontFamily:'Courier New',color:'#c0aae8',letterSpacing:2}).setOrigin(0.5).setDepth(10);
-    }
-    if(Phaser.Input.Keyboard.JustDown(this.keys.action)){
-      this.transitioning=true;
-      if(this.exitPrompt){this.exitPrompt.destroy();this.exitPrompt=null;}
-      this.cameras.main.fadeOut(600,0,0,0);
-      this.time.delayedCall(650,()=>{currentDoor=6;updateDoorCounter(6);this.scene.start('FinalScene');});
-    }
-  }
-
-  createPlayer() {
-    const floorY=GAME_H-60;
-    this.player=this.physics.add.sprite(80,floorY-40,null).setVisible(false);
-    this.player.body.setSize(24,40);this.player.setCollideWorldBounds(true);
-    this.player.body.setGravityY(700);this.player.body.setMaxVelocityY(900);
-    this.playerGfx=this.add.graphics().setDepth(5);
-  }
-
-  setupControls() {
-    this.cursors=this.input.keyboard.createCursorKeys();
-    this.keys=this.input.keyboard.addKeys({left:Phaser.Input.Keyboard.KeyCodes.A,right:Phaser.Input.Keyboard.KeyCodes.D,jump:Phaser.Input.Keyboard.KeyCodes.W,action:Phaser.Input.Keyboard.KeyCodes.E});
-    this.spaceKey=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.facingLeft=false;this.exitPrompt=null;
-  }
-
-  drawPlayer(x,y,fl){
-    const g=this.playerGfx;g.clear();
-    g.fillStyle(COLORS.player);g.fillRect(x-10,y-38,20,28);g.fillRect(x-9,y-58,18,18);
-    g.fillStyle(COLORS.playerEye);g.fillRect(fl?x-5:x+2,y-53,4,4);
-    g.fillStyle(COLORS.player,0.8);g.fillRect(x-8,y-10,7,12);g.fillRect(x+1,y-10,7,12);
-    g.fillRect(x-14,y-36,5,20);g.fillRect(x+9,y-36,5,20);
-  }
-
-  update() {
-    if(this.transitioning)return;
-    const onGround=this.player.body.blocked.down;
-    const speed=200;
-
-    let nearHide=false;
-    this.wardrobes.forEach(w=>{if(Phaser.Math.Distance.Between(this.player.x,this.player.y,w.x,w.y)<70)nearHide=true;});
-
-    if (nearHide && !this.hideHint) {
-      this.hideHint = this.add.text(this.player.x, this.player.y - 70, '[E] Esconder',
-        { fontSize: '11px', fontFamily: 'Courier New', color: '#aa8866', letterSpacing: 1 }
-      ).setOrigin(0.5).setDepth(10);
-    } else if (!nearHide && this.hideHint) {
-      this.hideHint.destroy(); this.hideHint = null;
-    }
-    if (this.hideHint) { this.hideHint.x = this.player.x; this.hideHint.y = this.player.y - 70; }
-
-    if(nearHide&&Phaser.Input.Keyboard.JustDown(this.keys.action)){
-      this.inHiding=!this.inHiding;
-      this.player.body.setAllowGravity(!this.inHiding);
-      if(this.inHiding)this.player.body.setVelocity(0,0);
-    }
-
-    if(!this.inHiding){
-      if(this.cursors.left.isDown||this.keys.left.isDown){this.player.body.setVelocityX(-speed);this.facingLeft=true;}
-      else if(this.cursors.right.isDown||this.keys.right.isDown){this.player.body.setVelocityX(speed);this.facingLeft=false;}
-      else this.player.body.setVelocityX(0);
-      if((this.cursors.up.isDown||this.keys.jump.isDown||this.spaceKey.isDown)&&onGround)this.player.body.setVelocityY(-480);
-    } else {
-      this.player.body.setVelocity(0,0);
-    }
-
-    this.drawPlayer(this.player.x,this.player.y,this.facingLeft);
-
-    this.enemyList.forEach((e,i)=>{
-      const s=e.sprite;
-      if(s.x>1780||s.x<20){s.body.setVelocityX(-s.body.velocity.x);}
-      const dist=this.player.x-s.x;
-      if(Math.abs(dist)<250&&!this.inHiding){
-        s.body.setVelocityX(dist>0?e.speed*1.5:-e.speed*1.5);
-      }
-      this.drawEnemy(this.enemyGfxList[i],s.x,s.y,e.type,s.body.velocity.x>0?1:-1);
-    });
-
-    this.mariaTriggerXs.forEach((tx,i)=>{
-      if(!this.mariaTriggered[i]&&Math.abs(this.player.x-tx)<40){
-        this.mariaTriggered[i]=true;
-        if(this.hidePrompt)this.hidePrompt.destroy();
-        this.hidePrompt=this.add.text(this.player.x,this.player.y-80,'(!) ESCONDA-SE! [E]',
-          {fontSize:'12px',fontFamily:'Courier New',color:'#ff5555',letterSpacing:1}).setOrigin(0.5).setDepth(20);
-        this.tweens.add({targets:this.hidePrompt,alpha:{from:1,to:0.3},duration:300,yoyo:true,repeat:5,
-          onComplete:()=>{if(this.hidePrompt){this.hidePrompt.destroy();this.hidePrompt=null;}}});
-        this.drawMaria(this.player.x+80,GAME_H-60-50);
-        this.tweens.add({targets:this.mariaGfx,alpha:{from:1,to:0},duration:2000,onComplete:()=>this.mariaGfx.clear()});
-        if(!this.inHiding&&!this.hitCooldown){
-          this.time.delayedCall(900,()=>{
-            if(!this.inHiding){
-              this.hitCooldown=true;
-              playerHealth=Math.max(0,playerHealth-1);
-              updateHealthUI();
-              this.time.delayedCall(1500,()=>{this.hitCooldown=false;});
-              if(playerHealth<=0){this.transitioning=true;this.time.delayedCall(600,()=>this.scene.start('GameOverScene'));}
-            }
-          });
-        }
-      }
-    });
-
-    if(this.exitPrompt){this.exitPrompt.x=this.player.x;this.exitPrompt.y=this.player.y-70;}
-    if(this.hidePrompt){this.hidePrompt.x=this.player.x;this.hidePrompt.y=this.player.y-80;}
-  }
-}
-
-// =============================================
-//  CLASSE FinalScene (BIBLIOTECA)
-// =============================================
-class FinalScene extends Phaser.Scene {
-  constructor() { super({ key: 'FinalScene' }); }
-
-  create() {
-    updateDoorCounter(100);
-    showPhaseTitle('FASE FINAL -- A BIBLIOTECA');
-    this.cameras.main.fadeIn(1000, 0, 0, 0);
-    this.cameras.main.setBackgroundColor('#06060e');
-    this.physics.world.setBounds(0, 0, GAME_W, GAME_H);
-    this.cameras.main.setBounds(0, 0, GAME_W, GAME_H);
-
-    this.transitioning = false;
+    // Configurações específicas
     this.solvedCount = 0;
     this.totalPuzzles = 3;
     this.activePuzzle = null;
-
+    this.puzzles = [];
+    
+    this.platforms = this.physics.add.staticGroup();
+    this.puzzleZones = this.physics.add.staticGroup();
+    
     this.buildLibrary();
-    this.createPlayer();
     this.createPuzzles();
-    this.setupControls();
-
+    
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.overlap(this.player, this.puzzleZones, this.nearPuzzle, null, this);
   }
 
   buildLibrary() {
-    this.platforms = this.physics.add.staticGroup();
     const g = this.add.graphics();
-    const floorY = GAME_H - 60;
+    
+    // Fundo
+    g.fillStyle(0x06060e);
+    g.fillRect(0, 0, this.worldWidth, GAME_H);
+    
+    // Chão
+    g.fillStyle(0x0e0e1a);
+    g.fillRect(0, this.floorY, this.worldWidth, 60);
+    g.fillStyle(0x1a1a28);
+    g.fillRect(0, this.floorY, this.worldWidth, 3);
 
-    g.fillStyle(0x06060e); g.fillRect(0,0,GAME_W,GAME_H);
-    g.fillStyle(0x0e0e1a); g.fillRect(0,floorY,GAME_W,60);
-    g.fillStyle(0x1a1a28); g.fillRect(0,floorY,GAME_W,3);
-    g.fillStyle(0x040408); g.fillRect(0,0,GAME_W,30);
+    // Física do chão
+    const floor = this.add.rectangle(this.worldWidth/2, this.floorY + 30, this.worldWidth, 60)
+      .setVisible(false);
+    this.physics.add.existing(floor, true);
+    this.platforms.add(floor);
 
-    const floor=this.add.rectangle(GAME_W/2,floorY+30,GAME_W,60).setVisible(false);
-    this.physics.add.existing(floor,true); this.platforms.add(floor);
+    // Estantes como plataformas
+    const shelves = [
+      {x:50,y:320,w:160}, {x:350,y:260,w:160},
+      {x:650,y:300,w:160}, {x:700,y:200,w:120}
+    ];
 
-    const shelves=[{x:50,y:320,w:160},{x:350,y:260,w:160},{x:650,y:300,w:160},{x:700,y:200,w:120}];
-    shelves.forEach(s=>{
-      g.fillStyle(0x1a0e05); g.fillRect(s.x,s.y,s.w,GAME_H-60-s.y);
-      g.fillStyle(0x2a1a08); g.fillRect(s.x,s.y,s.w,14);
+    shelves.forEach(s => {
+      g.fillStyle(0x1a0e05);
+      g.fillRect(s.x, s.y, s.w, GAME_H - 60 - s.y);
       
-      const pl=this.add.rectangle(s.x+s.w/2,s.y+8,s.w,14).setVisible(false);
-      this.physics.add.existing(pl,true); this.platforms.add(pl);
+      // Livros
+      const bookColors = [0x8b0000, 0x006400, 0x00008b, 0x8b6914];
+      for(let bx = s.x + 4; bx < s.x + s.w - 4; bx += 12) {
+        g.fillStyle(bookColors[Math.floor((bx/12) % bookColors.length)], 0.8);
+        g.fillRect(bx, s.y - 20, 10, 20);
+      }
+      
+      const plat = this.add.rectangle(s.x + s.w/2, s.y + 8, s.w, 16).setVisible(false);
+      this.physics.add.existing(plat, true);
+      this.platforms.add(plat);
     });
 
-    const ddx=GAME_W/2-30, ddy=floorY-110;
-    g.fillStyle(0x2a1a00); g.fillRect(ddx-4,ddy-6,68,116);
-    g.fillStyle(0x1a0e00); g.fillRect(ddx,ddy,60,110);
-    g.lineStyle(2,0x886600,0.5); g.strokeRect(ddx,ddy,60,110);
+    // A porta final (trancada)
+    const dx = GAME_W/2 - 30, dy = this.floorY - 110;
+    g.fillStyle(0x2a1a00);
+    g.fillRect(dx - 4, dy - 6, 68, 116);
+    g.fillStyle(0x1a0e00);
+    g.fillRect(dx, dy, 60, 110);
     
-    g.fillStyle(0x775500); g.fillRect(ddx+22,ddy+50,16,14);
-    g.lineStyle(3,0x886600,0.8);
-    g.beginPath(); g.arc(ddx+30,ddy+50,7,Math.PI,0); g.strokePath();
+    // Cadeado
+    g.fillStyle(0x775500);
+    g.fillRect(dx + 22, dy + 50, 16, 14);
     
-    this.add.text(GAME_W/2,ddy-20,'DOOR 100',{fontSize:'11px',fontFamily:'Courier New',color:'#553300',letterSpacing:2}).setOrigin(0.5);
+    this.add.text(GAME_W/2, dy - 20, 'DOOR 100', {
+      fontSize: '12px',
+      fontFamily: 'Courier New',
+      color: '#553300',
+      letterSpacing: 2
+    }).setOrigin(0.5);
   }
 
   createPuzzles() {
-    this.puzzleZones = this.physics.add.staticGroup();
-    const floorY = GAME_H - 60;
     const g = this.add.graphics().setDepth(3);
-
+    
     const puzzleData = [
       { x: 150, code: '? + ? = 10\n(5 + _)', answer: '5', hint: 'Dois iguais que somam 10' },
       { x: 450, code: 'CHUCHU\n ao cubo', answer: '3', hint: 'Letras de CHUCHU' },
@@ -1887,78 +1851,155 @@ class FinalScene extends Phaser.Scene {
     ];
 
     this.puzzles = puzzleData.map((p, i) => {
-      g.fillStyle(0x1a1408); g.fillRect(p.x-20,floorY-55,40,55);
-      g.fillStyle(0x2a2010); g.fillRect(p.x-22,floorY-60,44,8);
-      g.fillStyle(0x3a3018); g.fillRect(p.x-18,floorY-55,36,4);
-      g.fillStyle(0x4444aa,0.6); g.fillCircle(p.x,floorY-70,12);
+      // Pedestal
+      g.fillStyle(0x1a1408);
+      g.fillRect(p.x - 20, this.floorY - 55, 40, 55);
       
-      const zone=this.add.rectangle(p.x,floorY-30,50,60).setVisible(false);
-      this.physics.add.existing(zone,true);
+      // Orbe brilhante
+      g.fillStyle(0x4444aa, 0.6);
+      g.fillCircle(p.x, this.floorY - 70, 12);
+      
+      // Número
+      this.add.text(p.x, this.floorY - 95, `[${i+1}]`, {
+        fontSize: '12px',
+        fontFamily: 'Courier New',
+        color: '#6666aa',
+        letterSpacing: 2
+      }).setOrigin(0.5).setDepth(4);
+
+      const zone = this.add.zone(p.x, this.floorY - 30, 50, 60);
+      this.physics.add.existing(zone, true);
       this.puzzleZones.add(zone);
-      return {zone, ...p, solved: false, index: i};
+      
+      return { zone, ...p, solved: false };
     });
   }
 
   nearPuzzle(player, zone) {
-    if (this.transitioning || this.activePuzzle !== null) return;
+    if (this.activePuzzle !== null) return;
+    
     const puzzle = this.puzzles.find(p => p.zone === zone);
     if (!puzzle || puzzle.solved) return;
 
     if (!this.interactHint) {
-      this.interactHint = this.add.text(this.player.x, this.player.y-70, '[E] Examinar',
-        {fontSize:'11px',fontFamily:'Courier New',color:'#6666aa',letterSpacing:1}).setOrigin(0.5).setDepth(10).setScrollFactor(0);
-      this.interactHint.x = GAME_W/2; this.interactHint.y = GAME_H - 90;
+      this.interactHint = this.add.text(GAME_W/2, GAME_H - 90, '[E] Examinar', {
+        fontSize: '14px',
+        fontFamily: 'Courier New',
+        color: '#6666aa',
+        letterSpacing: 2,
+        backgroundColor: '#000000',
+        padding: { x: 8, y: 4 }
+      }).setOrigin(0.5).setDepth(20).setScrollFactor(0);
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.keys.action)) {
-      this.activePuzzle = puzzle;
-      this.showPuzzleUI(puzzle);
-    }
+    this.nearPuzzleObj = puzzle;
   }
 
   showPuzzleUI(puzzle) {
-    this.overlay = this.add.rectangle(GAME_W/2, GAME_H/2, GAME_W, GAME_H, 0x000000, 0.75).setScrollFactor(0).setDepth(30);
-    this.puzzleBox = this.add.rectangle(GAME_W/2, GAME_H/2, 420, 240, 0x0e0e1a).setScrollFactor(0).setDepth(31);
+    // Overlay escuro
+    this.overlay = this.add.rectangle(GAME_W/2, GAME_H/2, GAME_W, GAME_H, 0x000000, 0.75)
+      .setScrollFactor(0).setDepth(30);
     
-    this.add.text(GAME_W/2, GAME_H/2-90, '-- ENIGMA --', {fontSize:'13px',fontFamily:'Courier New',color:'#8888cc',letterSpacing:4}).setOrigin(0.5).setScrollFactor(0).setDepth(32);
-    this.add.text(GAME_W/2, GAME_H/2-50, puzzle.code, {fontSize:'16px',fontFamily:'Courier New',color:'#c0aae8',letterSpacing:2,align:'center'}).setOrigin(0.5).setScrollFactor(0).setDepth(32);
-    this.add.text(GAME_W/2, GAME_H/2+10, puzzle.hint, {fontSize:'11px',fontFamily:'Courier New',color:'#445566',letterSpacing:1,align:'center'}).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+    // Caixa do puzzle
+    this.add.rectangle(GAME_W/2, GAME_H/2, 400, 250, 0x0e0e1a)
+      .setScrollFactor(0).setDepth(31);
+    this.add.rectangle(GAME_W/2, GAME_H/2, 400, 250, 0x0, 0)
+      .setStrokeStyle(2, 0x4444aa).setScrollFactor(0).setDepth(32);
+
+    // Conteúdo
+    this.add.text(GAME_W/2, GAME_H/2 - 80, '-- ENIGMA --', {
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: '#8888cc',
+      letterSpacing: 4
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+
+    this.add.text(GAME_W/2, GAME_H/2 - 40, puzzle.code, {
+      fontSize: '18px',
+      fontFamily: 'Courier New',
+      color: '#c0aae8',
+      letterSpacing: 2,
+      align: 'center'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+
+    this.add.text(GAME_W/2, GAME_H/2, puzzle.hint, {
+      fontSize: '12px',
+      fontFamily: 'Courier New',
+      color: '#445566',
+      letterSpacing: 1
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+
+    this.add.text(GAME_W/2 - 60, GAME_H/2 + 40, 'RESPOSTA:', {
+      fontSize: '14px',
+      fontFamily: 'Courier New',
+      color: '#6666aa',
+      letterSpacing: 1
+    }).setOrigin(0,0.5).setScrollFactor(0).setDepth(32);
 
     this.answerText = '';
-    this.answerDisplay = this.add.text(GAME_W/2+20, GAME_H/2+50, '_', {fontSize:'16px',fontFamily:'Courier New',color:'#c0aae8',letterSpacing:3}).setOrigin(0,0.5).setScrollFactor(0).setDepth(32);
-    this.feedbackText = this.add.text(GAME_W/2, GAME_H/2+85, '', {fontSize:'12px',fontFamily:'Courier New',color:'#ff5555',letterSpacing:2}).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+    this.answerDisplay = this.add.text(GAME_W/2 + 20, GAME_H/2 + 40, '_', {
+      fontSize: '18px',
+      fontFamily: 'Courier New',
+      color: '#c0aae8',
+      letterSpacing: 3
+    }).setOrigin(0,0.5).setScrollFactor(0).setDepth(32);
 
+    this.feedbackText = this.add.text(GAME_W/2, GAME_H/2 + 80, '', {
+      fontSize: '12px',
+      fontFamily: 'Courier New',
+      color: '#ff5555',
+      letterSpacing: 2
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+
+    // Input handler
     this.puzzleKeyHandler = (e) => {
-      if (e.key === 'Escape') { this.closePuzzleUI(); return; }
-      if (e.key === 'Enter') { this.checkAnswer(); return; }
-      if (e.key === 'Backspace') { this.answerText = this.answerText.slice(0,-1); }
-      else if (e.key.length === 1 && this.answerText.length < 6) { this.answerText += e.key; }
+      if (e.key === 'Escape') {
+        this.closePuzzleUI();
+        return;
+      }
+      if (e.key === 'Enter') {
+        this.checkAnswer();
+        return;
+      }
+      if (e.key === 'Backspace') {
+        this.answerText = this.answerText.slice(0, -1);
+      } else if (e.key.length === 1 && this.answerText.length < 6) {
+        this.answerText += e.key;
+      }
       this.answerDisplay.setText(this.answerText || '_');
     };
+    
     window.addEventListener('keydown', this.puzzleKeyHandler);
-    if (this.interactHint) { this.interactHint.destroy(); this.interactHint = null; }
+    
+    if (this.interactHint) {
+      this.interactHint.destroy();
+      this.interactHint = null;
+    }
   }
 
   checkAnswer() {
     if (this.answerText.trim() === this.activePuzzle.answer) {
-      this.feedbackText.setColor('#00ff88').setText('(ok) CORRETO!');
+      // Correto
+      this.feedbackText.setColor('#00ff88').setText('✓ CORRETO!');
       window.removeEventListener('keydown', this.puzzleKeyHandler);
+      
       this.activePuzzle.solved = true;
       this.solvedCount++;
+      
       this.time.delayedCall(1000, () => {
         this.closePuzzleUI();
         this.checkWin();
       });
     } else {
-      this.feedbackText.setColor('#ff5555').setText('(x) ERRADO. Tente novamente.');
+      // Errado
+      this.feedbackText.setText('✗ ERRADO. Tente novamente.');
       this.answerText = '';
       this.answerDisplay.setText('_');
-      playerHealth = Math.max(0, playerHealth-1);
-      updateHealthUI();
-      if (playerHealth <= 0) {
+      
+      if (GameState.damage(1)) {
         window.removeEventListener('keydown', this.puzzleKeyHandler);
         this.closePuzzleUI();
-        this.time.delayedCall(500, () => this.scene.start('GameOverScene'));
+        this.time.delayedCall(500, () => this.transitionTo('GameOverScene'));
       }
     }
   }
@@ -1972,172 +2013,209 @@ class FinalScene extends Phaser.Scene {
   checkWin() {
     if (this.solvedCount < this.totalPuzzles) {
       const remaining = this.totalPuzzles - this.solvedCount;
-      const msg = this.add.text(GAME_W/2, GAME_H/2-20, `${remaining} enigma(s) restante(s)...`,
-        {fontSize:'13px',fontFamily:'Courier New',color:'#6666aa',letterSpacing:2}).setOrigin(0.5).setScrollFactor(0).setDepth(10);
-      this.tweens.add({targets:msg, alpha:0, duration:800, delay:1500, onComplete:()=>msg.destroy()});
+      const msg = this.add.text(GAME_W/2, GAME_H/2 - 20, `${remaining} enigma(s) restante(s)...`, {
+        fontSize: '14px',
+        fontFamily: 'Courier New',
+        color: '#6666aa',
+        letterSpacing: 2,
+        backgroundColor: '#000000',
+        padding: { x: 10, y: 5 }
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(10);
+      
+      this.tweens.add({
+        targets: msg,
+        alpha: 0,
+        duration: 800,
+        delay: 1500,
+        onComplete: () => msg.destroy()
+      });
       return;
     }
+    
+    // Todos resolvidos - vitória!
     this.transitioning = true;
-    const unlock = this.add.text(GAME_W/2, GAME_H/2, '? PORTA DESBLOQUEADA!',
-      {fontSize:'18px',fontFamily:'Courier New',color:'#ffdd44',letterSpacing:3}).setOrigin(0.5).setScrollFactor(0).setDepth(20);
-    this.tweens.add({targets:unlock, alpha:{from:1,to:0.3}, duration:400, yoyo:true, repeat:3,
-      onComplete:()=>{
+    
+    const unlock = this.add.text(GAME_W/2, GAME_H/2, '✓ PORTA DESTRANCADA!', {
+      fontSize: '20px',
+      fontFamily: 'Courier New',
+      color: '#ffdd44',
+      letterSpacing: 3,
+      backgroundColor: '#000000',
+      padding: { x: 15, y: 8 }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
+    
+    this.tweens.add({
+      targets: unlock,
+      alpha: { from: 1, to: 0.3 },
+      duration: 400,
+      yoyo: true,
+      repeat: 3,
+      onComplete: () => {
         unlock.destroy();
-        this.cameras.main.fadeOut(800,0,0,0);
-        this.time.delayedCall(850, ()=>this.scene.start('WinScene'));
+        this.transitionTo('WinScene');
       }
     });
   }
 
-  createPlayer() {
-    const floorY=GAME_H-60;
-    this.player=this.physics.add.sprite(60,floorY-40,null).setVisible(false);
-    this.player.body.setSize(24,40);this.player.setCollideWorldBounds(true);
-    this.player.body.setGravityY(700);this.player.body.setMaxVelocityY(900);
-    this.playerGfx=this.add.graphics().setDepth(5);
-  }
-
-  setupControls() {
-    this.cursors=this.input.keyboard.createCursorKeys();
-    this.keys=this.input.keyboard.addKeys({left:Phaser.Input.Keyboard.KeyCodes.A,right:Phaser.Input.Keyboard.KeyCodes.D,jump:Phaser.Input.Keyboard.KeyCodes.W,action:Phaser.Input.Keyboard.KeyCodes.E});
-    this.spaceKey=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.facingLeft=false; this.interactHint=null;
-  }
-
-  drawPlayer(x,y,fl){
-    const g=this.playerGfx;g.clear();
-    g.fillStyle(COLORS.player);g.fillRect(x-10,y-38,20,28);g.fillRect(x-9,y-58,18,18);
-    g.fillStyle(COLORS.playerEye);g.fillRect(fl?x-5:x+2,y-53,4,4);
-    g.fillStyle(COLORS.player,0.8);g.fillRect(x-8,y-10,7,12);g.fillRect(x+1,y-10,7,12);
-    g.fillRect(x-14,y-36,5,20);g.fillRect(x+9,y-36,5,20);
+  handleInteract() {
+    if (this.transitioning || this.activePuzzle) return;
+    
+    if (this.nearPuzzleObj && !this.nearPuzzleObj.solved) {
+      this.activePuzzle = this.nearPuzzleObj;
+      this.showPuzzleUI(this.nearPuzzleObj);
+    }
   }
 
   update() {
-    if(this.transitioning)return;
-    if(this.activePuzzle!==null)return;
-    const onGround=this.player.body.blocked.down;
-    const speed=180;
-    if(this.cursors.left.isDown||this.keys.left.isDown){this.player.body.setVelocityX(-speed);this.facingLeft=true;}
-    else if(this.cursors.right.isDown||this.keys.right.isDown){this.player.body.setVelocityX(speed);this.facingLeft=false;}
-    else this.player.body.setVelocityX(0);
-    if((this.cursors.up.isDown||this.keys.jump.isDown||this.spaceKey.isDown)&&onGround)this.player.body.setVelocityY(-480);
-    this.drawPlayer(this.player.x,this.player.y,this.facingLeft);
+    if (this.transitioning) return;
+    if (this.activePuzzle) return;
+    
+    this.handleMovement();
+    this.drawPlayer();
+    
+    // Atualiza dica de interação
+    if (this.nearPuzzleObj && !this.interactHint) {
+      this.interactHint = this.add.text(GAME_W/2, GAME_H - 90, '[E] Examinar', {
+        fontSize: '14px',
+        fontFamily: 'Courier New',
+        color: '#6666aa',
+        letterSpacing: 2,
+        backgroundColor: '#000000',
+        padding: { x: 8, y: 4 }
+      }).setOrigin(0.5).setDepth(20).setScrollFactor(0);
+    } else if (!this.nearPuzzleObj && this.interactHint) {
+      this.interactHint.destroy();
+      this.interactHint = null;
+    }
+    
+    this.nearPuzzleObj = null;
   }
 }
-
 // =============================================
-//  CLASSE GameOverScene
+//  CENA: GAME OVER
 // =============================================
 class GameOverScene extends Phaser.Scene {
   constructor() { super({ key: 'GameOverScene' }); }
 
   create() {
-    ['Phase1Scene','Phase2Scene','Phase3Scene','Phase4Scene','Phase5Scene','FinalScene','WinScene'].forEach(k => {
-      try { if (this.scene.isActive(k)) this.scene.stop(k); } catch(e) {}
-    });
-    
-    playerHealth = 4;
-    currentDoor = 1;
-    updateHealthUI();
-    updateDoorCounter(1);
-
     this.cameras.main.setBackgroundColor('#050508');
     this.cameras.main.fadeIn(700, 0, 0, 0);
-    this.add.graphics().fillStyle(0x050508).fillRect(0, 0, GAME_W, GAME_H);
-
-    this.add.text(GAME_W/2, GAME_H/2 - 80, 'VOCE MORREU', {
-      fontSize: '52px', fontFamily: 'Courier New', color: '#ff4444', letterSpacing: 8
+    
+    this.add.text(GAME_W/2, GAME_H/2 - 80, TEXTS.GAME_OVER, {
+      fontSize: '52px',
+      fontFamily: 'Courier New',
+      color: '#ff4444',
+      letterSpacing: 8
     }).setOrigin(0.5);
 
-    this.add.text(GAME_W/2, GAME_H/2 - 10, 'Pressione R para tentar de novo', {
-      fontSize: '18px', fontFamily: 'Courier New', color: '#cc7777', letterSpacing: 2
+    this.add.text(GAME_W/2, GAME_H/2 - 10, TEXTS.TRY_AGAIN, {
+      fontSize: '18px',
+      fontFamily: 'Courier New',
+      color: '#cc7777',
+      letterSpacing: 2
     }).setOrigin(0.5);
 
-    this.add.rectangle(GAME_W/2, GAME_H/2 + 75, 302, 12, 0x331111);
-    const bar = this.add.rectangle(GAME_W/2 - 150, GAME_H/2 + 75, 1, 12, 0xff4444).setOrigin(0, 0.5);
-    this.tweens.add({ targets: bar, width: 300, duration: 5000, ease: 'Linear',
-      onComplete: () => this.doRestart()
+    this.input.keyboard.once('keydown-R', () => {
+      GameState.reset();
+      this.cameras.main.fadeOut(400, 0, 0, 0);
+      this.time.delayedCall(450, () => this.scene.start('Phase1Scene'));
     });
-
-    this.input.keyboard.once('keydown-R', () => this.doRestart());
-    this._restarting = false;
-  }
-
-  doRestart() {
-    if (this._restarting) return;
-    this._restarting = true;
-    this.tweens.killAll();
-    this.cameras.main.fadeOut(400, 0, 0, 0);
-    this.time.delayedCall(450, () => this.scene.start('Phase1Scene'));
   }
 }
 
 // =============================================
-//  CLASSE WinScene
+//  CENA: VITÓRIA
 // =============================================
 class WinScene extends Phaser.Scene {
   constructor() { super({ key: 'WinScene' }); }
-  
+
   create() {
     this.cameras.main.setBackgroundColor('#050508');
     this.cameras.main.fadeIn(1200, 0, 0, 0);
+    
+    // Confetes
     const g = this.add.graphics();
-    g.fillStyle(0x050508); g.fillRect(0,0,GAME_W,GAME_H);
-
-    for(let i=0;i<60;i++){
-      const cx=Phaser.Math.Between(0,GAME_W), cy=Phaser.Math.Between(0,GAME_H);
-      const cc=[0xffdd44,0xff6688,0x66ffaa,0x88aaff,0xff8844][i%5];
-      g.fillStyle(cc,Phaser.Math.FloatBetween(0.3,0.8));
-      g.fillRect(cx,cy,Phaser.Math.Between(4,10),Phaser.Math.Between(4,10));
+    for(let i = 0; i < 60; i++) {
+      const cx = Phaser.Math.Between(0, GAME_W);
+      const cy = Phaser.Math.Between(0, GAME_H);
+      const cc = [0xffdd44, 0xff6688, 0x66ffaa][i % 3];
+      g.fillStyle(cc, Phaser.Math.FloatBetween(0.3, 0.8));
+      g.fillRect(cx, cy, Phaser.Math.Between(4, 10), Phaser.Math.Between(4, 10));
     }
 
-    g.fillStyle(COLORS.doorFrame); g.fillRect(GAME_W/2-34,GAME_H/2-150,68,115);
-    g.fillStyle(0x000000,0.1); g.fillRect(GAME_W/2-30,GAME_H/2-146,60,110);
-    const light=this.add.rectangle(GAME_W/2,GAME_H/2-95,80,130,0xffeedd,0.15);
-    this.tweens.add({targets:light,alpha:{from:0.08,to:0.25},duration:800,yoyo:true,repeat:-1});
-
-    this.add.text(GAME_W/2, GAME_H/2-10, 'PARABÉNS!', {
-      fontSize:'52px', fontFamily:'Courier New', color:'#ffdd44', letterSpacing:8
+    this.add.text(GAME_W/2, GAME_H/2 - 10, TEXTS.WIN, {
+      fontSize: '52px',
+      fontFamily: 'Courier New',
+      color: '#ffdd44',
+      letterSpacing: 8
     }).setOrigin(0.5);
 
-    this.add.text(GAME_W/2, GAME_H/2+55, 'Você chegou à Porta 100!', {
-      fontSize:'16px', fontFamily:'Courier New', color:'#c0aae8', letterSpacing:3
+    this.add.text(GAME_W/2, GAME_H/2 + 55, 'Você chegou à Porta 100!', {
+      fontSize: '16px',
+      fontFamily: 'Courier New',
+      color: '#c0aae8',
+      letterSpacing: 3
     }).setOrigin(0.5);
 
-    this.add.text(GAME_W/2, GAME_H/2+90, 'Feliz Aniversário! ?', {
-      fontSize:'18px', fontFamily:'Courier New', color:'#ff88aa', letterSpacing:4
+    this.add.text(GAME_W/2, GAME_H/2 + 90, TEXTS.BIRTHDAY, {
+      fontSize: '18px',
+      fontFamily: 'Courier New',
+      color: '#ff88aa',
+      letterSpacing: 4
     }).setOrigin(0.5);
 
-    const restart=this.add.text(GAME_W/2,GAME_H/2+140,'[ R ] Jogar novamente',{
-      fontSize:'12px',fontFamily:'Courier New',color:'#44445a',letterSpacing:2
+    const restart = this.add.text(GAME_W/2, GAME_H/2 + 140, '[ R ] Jogar novamente', {
+      fontSize: '12px',
+      fontFamily: 'Courier New',
+      color: '#44445a',
+      letterSpacing: 2
     }).setOrigin(0.5);
-    this.tweens.add({targets:restart,alpha:0.2,duration:700,yoyo:true,repeat:-1});
+    
+    this.tweens.add({
+      targets: restart,
+      alpha: 0.2,
+      duration: 700,
+      yoyo: true,
+      repeat: -1
+    });
 
-    this.input.keyboard.on('keydown-R',()=>{
-      playerHealth=4; updateHealthUI();
-      this.cameras.main.fadeOut(500,0,0,0);
-      this.time.delayedCall(520,()=>this.scene.start('Phase1Scene'));
+    this.input.keyboard.on('keydown-R', () => {
+      GameState.reset();
+      this.cameras.main.fadeOut(500, 0, 0, 0);
+      this.time.delayedCall(520, () => this.scene.start('Phase1Scene'));
     });
   }
 }
-
 // =============================================
 //  INICIALIZAÇÃO DO JOGO
 // =============================================
-function startGame() {
-  const config = {
-    type: Phaser.AUTO,
-    width: GAME_W,
-    height: GAME_H,
-    parent: 'game-container',
-    backgroundColor: '#0a0a0f',
-    physics: {
-      default: 'arcade',
-      arcade: { gravity: { y: 0 }, debug: false }
-    },
-    scene: [BootScene, Phase1Scene, Phase2Scene, Phase3Scene, Phase4Scene, Phase5Scene, FinalScene, GameOverScene, WinScene]
-  };
-  new Phaser.Game(config);
-}
+const config = {
+  type: Phaser.AUTO,
+  width: GAME_W,
+  height: GAME_H,
+  parent: 'game-container',
+  backgroundColor: '#0a0a0f',
+  physics: {
+    default: 'arcade',
+    arcade: { 
+      gravity: { y: 0 },
+      debug: false 
+    }
+  },
+  scene: [
+    BootScene,
+    Phase1Scene,
+    Phase2Scene,
+    Phase3Scene,
+    Phase4Scene,
+    Phase5Scene,
+    FinalScene,
+    GameOverScene,
+    WinScene
+  ]
+};
 
-startGame();
+// Inicializa o jogo quando a página carregar
+window.onload = () => {
+  new Phaser.Game(config);
+};

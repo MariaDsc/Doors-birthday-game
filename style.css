@@ -99,6 +99,7 @@ body {
   letter-spacing: 2px;
   pointer-events: none;
   z-index: 10;
+  white-space: nowrap; /*impede que o texto quebre em várias linhas */
 }
 
 /* EFEITO SCANLINE (linhas de TV antiga) */
