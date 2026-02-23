@@ -491,7 +491,7 @@ class BootScene extends Phaser.Scene {
 
     this.input.keyboard.once('keydown', () => {
       this.cameras.main.fadeOut(600, 0, 0, 0);
-      this.time.delayedCall(620, () => this.scene.start('Phase3Scene'));
+      this.time.delayedCall(620, () => this.scene.start('Phase2Scene'));
     });
   }
 
@@ -711,139 +711,656 @@ class Phase1Scene extends BaseScene {
 class Phase2Scene extends BaseScene {
   constructor() {
     super('Phase2Scene');
-    this.worldWidth = 2000;
+    this.worldWidth = 5100; // 3400 * 1.5
+    this.s = 1.5; // fator de escala global
+  }
+
+  init() {
+    super.init();
+    this.worldWidth = 5100;
+    this.floorY = GAME_H - 30; // ajustado para escala 1.5
   }
 
   create() {
     super.create();
+    // Aumenta o player só nessa fase (escala 1.5)
+    this.player.body.setSize(36, 60); // 24*1.5 = 36, 40*1.5 = 60
+    this.player.setPosition(80 * this.s, this.floorY - 50 * this.s);
     GameState.door = 2;
     GameState.updateUI();
     this.showPhaseTitle(TEXTS.PHASE_2);
 
     this.platforms = this.physics.add.staticGroup();
     this.wardrobes = [];
+    this.drawers = [];
     this.jeremiah = null;
     this.jeremiahGfx = null;
     this.jeremiahDir = 1;
-    this.jeremiahSpeed = 80;
+    this.jeremiahSpeed = 90 * this.s;
     this.jeremiahLooking = false;
     this.hitCooldown = false;
     this.inWardrobe = false;
+    this.inPool = false;
+    this.inBush = false;
+    this.keyFound = false;
 
-    this.buildLevel();
+    this.buildKitchen();
+    this.buildGardenPool();
+    this.buildPier();
     this.createJeremiah();
-    this.createWardrobes();
-    this.createDoor(1900, '002', 'Phase3Scene');
-    this.createTorches();
-    this.createWallCracks();
+    this.createDoor(3330 * this.s, '002', 'Phase3Scene');
 
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.collider(this.jeremiah, this.platforms);
   }
 
-  buildLevel() {
-    const g = this.add.graphics();
+  drawPlayer() {
+    const x = this.player.x;
+    const y = this.player.y;
+    const g = this.playerGfx;
+    g.clear();
 
-    // Fundo mais escuro
-    g.fillStyle(0x070710);
-    g.fillRect(0, 0, this.worldWidth, GAME_H);
+    // Escala 1.5 (igual ao corpo da física)
+    const s = 1.5;
 
-    // Chão
-    g.fillStyle(0x111122);
-    g.fillRect(0, this.floorY, this.worldWidth, 60);
-    g.fillStyle(0x1a1a30);
-    g.fillRect(0, this.floorY, this.worldWidth, 3);
+    this.playerShadow.clear();
+    this.playerShadow.fillStyle(0x000000, 0.25);
+    this.playerShadow.fillEllipse(x, this.floorY - 2, 50 * s, 14 * s);
 
-    // Teto
-    g.fillStyle(0x050510);
-    g.fillRect(0, 0, this.worldWidth, 30);
+    g.fillStyle(COLORS.player);
+    g.fillRect(x - 15 * s, y - 55 * s, 30 * s, 40 * s);  // corpo
+    g.fillRect(x - 13 * s, y - 82 * s, 26 * s, 26 * s);  // cabeça
 
-    // Física do chão
-    const floor = this.add.rectangle(this.worldWidth / 2, this.floorY + 30, this.worldWidth, 60)
-      .setVisible(false);
+    g.fillStyle(COLORS.playerEye);
+    const eyeX = this.facingLeft ? x - 7 * s : x + 3 * s;
+    g.fillRect(eyeX, y - 75 * s, 6 * s, 6 * s);  // olhos
+
+    g.fillStyle(COLORS.player, 0.8);
+    g.fillRect(x - 12 * s, y - 14 * s, 10 * s, 16 * s);  // perna esq
+    g.fillRect(x + 2 * s, y - 14 * s, 10 * s, 16 * s);   // perna dir
+    g.fillRect(x - 20 * s, y - 52 * s, 7 * s, 28 * s);   // braço esq
+    g.fillRect(x + 13 * s, y - 52 * s, 7 * s, 28 * s);   // braço dir
+  }
+
+  // ─── COZINHA ──────────────────────────────────────
+  buildKitchen() {
+    const g = this.add.graphics().setDepth(1);
+    const s = this.s; // CORREÇÃO — era undefined, travando o create()
+    const ch = 75;    // bancada maior (era 55)
+    const topMargin = 55; // parede visível acima dos armários
+
+    // ── PAREDE ───────────────────────────────────────
+    g.fillStyle(0x7a9e8a);
+    g.fillRect(0, 0, 1400, GAME_H);
+    g.fillStyle(0x081828, 0.55);
+    g.fillRect(0, 0, 1400, GAME_H);
+
+    // ── TETO ─────────────────────────────────────────
+    g.fillStyle(0xc8d4dc);
+    g.fillRect(0, 0, 1400, 22);
+    [120, 340, 560, 780, 1000, 1220].forEach(x => {
+      g.fillStyle(0xb8c4cc);
+      g.fillRect(x, 0, 20, 22);
+    });
+
+    // ── CHÃO ─────────────────────────────────────────
+    g.fillStyle(0x0a0806);
+    g.fillRect(0, this.floorY, 1400, 8);
+    g.fillStyle(0x060504, 0.9);
+    g.fillRect(0, this.floorY + 8, 1400, 72);
+
+    const floor = this.add.rectangle(700, this.floorY + 30, 1400, 60).setVisible(false);
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
-    // Plataformas
-    const platforms = [
-      { x: 200, y: 330, w: 120 },
-      { x: 500, y: 270, w: 100 },
-      { x: 800, y: 310, w: 140 },
-      { x: 1100, y: 250, w: 100 },
-      { x: 1400, y: 290, w: 120 },
-      { x: 1700, y: 260, w: 110 },
+    // ── ARMÁRIO ALTO ESQUERDO ────────────────────────
+    g.fillStyle(0xd8e0e8);
+    g.fillRect(0, 22, 140, this.floorY - 22);
+    g.lineStyle(1, 0xc0ccd4);
+    g.strokeRect(5, 28, 130, (this.floorY - 30) / 2);
+    g.strokeRect(5, 32 + (this.floorY - 30) / 2, 130, (this.floorY - 40) / 2);
+    g.fillStyle(0x8898a8);
+    g.fillRect(58, this.floorY / 2 - 4, 24, 5);
+    g.fillRect(58, this.floorY * 0.75 - 4, 24, 5);
+    g.fillStyle(0x8a5a3a, 0.9);
+    g.fillCircle(30, 18, 14);
+    g.fillCircle(70, 15, 12);
+    g.fillStyle(0x3a6a8a, 0.8);
+    g.fillCircle(110, 17, 10);
+    g.fillStyle(0x081828, 0.2);
+    g.fillRect(135, 22, 8, this.floorY - 22);
+
+    // ── DIVISÓRIA: armário alto | armário aéreo esq ──
+    g.fillStyle(0x4a6858, 0.4);
+    g.fillRect(143, topMargin, 5, this.floorY - topMargin - ch);
+
+    // ── ARMÁRIO AÉREO ESQUERDO — grade com vidro ─────
+    const aereoY = topMargin+20;
+    const aereoH = 210;
+    g.fillStyle(0xd8e0e8);
+    g.fillRect(142, aereoY, 380, aereoH);
+    g.fillStyle(0xc8d4dc);
+    g.fillRect(335, aereoY, 8, aereoH);
+    const gridLeft = 142, gridRight = 343;
+    [gridLeft, gridRight].forEach(gx => {
+      const pw = (gx === gridLeft ? 179 : 177);
+      for (let col = 0; col < 2; col++) {
+        for (let row = 0; row < 3; row++) {
+          const vx = gx + 8 + col * (pw / 2 - 4);
+          const vy = aereoY + 8 + row * 66;
+          const vw = pw / 2 - 12;
+          const vh = 58;
+          g.fillStyle(0x050e1c, 0.35);
+          g.fillRect(vx, vy, vw, vh);
+          g.lineStyle(1, 0xc8d4dc);
+          g.strokeRect(vx, vy, vw, vh);
+        }
+      }
+      g.lineStyle(2, 0xb8c4cc);
+      g.strokeRect(gx + 4, aereoY + 4, pw - 8, aereoH - 8);
+    });
+    g.fillStyle(0x4a6a8a, 0.7);
+    g.fillRect(162, aereoY + 16, 10, 16);
+    g.fillRect(178, aereoY + 18, 8, 14);
+    g.fillRect(194, aereoY + 14, 12, 18);
+    g.fillStyle(0x3a5a78, 0.6);
+    g.fillRect(162, aereoY + 80, 12, 14);
+    g.fillRect(180, aereoY + 82, 10, 12);
+    g.fillStyle(0x4a7a5a, 0.5);
+    g.fillCircle(220, aereoY + 24, 8);
+    g.fillCircle(238, aereoY + 22, 6);
+    g.fillStyle(0x4a6870, 0.7);
+    g.fillRect(356, aereoY + 16, 10, 16);
+    g.fillRect(372, aereoY + 18, 12, 14);
+    g.fillRect(390, aereoY + 14, 8, 18);
+    g.fillStyle(0x3a5868, 0.6);
+    g.fillRect(356, aereoY + 80, 14, 14);
+    g.fillRect(376, aereoY + 82, 10, 12);
+    g.fillStyle(0x8898a8);
+    g.fillRect(218, aereoY + aereoH + 8, 26, 5);
+    g.fillRect(400, aereoY + aereoH + 8, 26, 5);
+
+    // ── JANELA CENTRAL ───────────────────────────────
+    const winX = 560, winY = topMargin + 5, winW = 240, winH = 275;
+
+    //fundo da janela
+    g.fillStyle(0x040b18);
+    g.fillRect(winX, winY, winW, winH);
+    // estrelas
+    [[570, winY + 12], [590, winY + 22], [614, winY + 8], [640, winY + 26],
+    [666, winY + 14], [692, winY + 32], [718, winY + 10], [742, winY + 24],
+    [570, winY + 75], [597, winY + 90], [630, winY + 65], [660, winY + 82],
+    [687, winY + 72], [717, winY + 88], [744, winY + 60], [770, winY + 78]].forEach(([sx, sy]) => {
+      g.fillStyle(0xffffff, 0.75);
+      g.fillCircle(sx, sy, 1.5);
+    });
+
+    // lua
+    g.fillCircle(740, winY + 25, 18);
+
+    // árvores
+    g.fillStyle(0x060e08);
+    g.fillTriangle(562, winY + winH, 617, winY + winH, 589, winY + winH - 70);
+    g.fillTriangle(600, winY + winH, 658, winY + winH, 629, winY + winH - 85);
+    g.fillTriangle(677, winY + winH, 734, winY + winH, 705, winY + winH - 72);
+    g.fillTriangle(717, winY + winH, 778, winY + winH, 747, winY + winH - 88);
+
+    // troncos
+    g.fillRect(585, winY + winH - 82, 7, 82);
+    g.fillRect(625, winY + winH - 98, 7, 98);
+    g.fillRect(701, winY + winH - 84, 7, 84);
+
+    // moldura da janela
+    g.fillStyle(0xd8e4ec);
+    g.fillRect(winX - 10, winY - 8, winW + 20, 10);
+    g.fillRect(winX - 10, winY + winH, winW + 20, 10);
+    g.fillRect(winX - 10, winY - 8, 10, winH + 18);
+    g.fillRect(winX + winW, winY - 8, 10, winH + 18);
+
+    // grades da janela
+    g.fillRect(winX + winW / 2 - 4, winY, 8, winH);
+    g.fillRect(winX + winW / 4 - 4, winY, 8, winH / 2 - 3); //0+tamanho da janela/4 e recua 4px para centralizar a grade de 8px, começa do topo da janela, 8px de largura, largura da janela/2 e recua 3px para não encostar na grade horizontal do meio
+    g.fillRect(winX + winW / 4 * 3 - 4, winY, 8, winH / 2 - 3); // para a esquera = 1/4 da jabela, para a direita, 3/4, por isso 4*3
+    g.fillRect(winX, winY + winH / 2 - 3, winW, 6);
+    g.fillStyle(0xc8d4dc);
+
+    // sombras no chão embaixo da janela
+    g.fillRect(winX - 14, winY + winH + 10, winW + 28, 10);
+    g.fillStyle(0x1a3820);
+    g.fillCircle(winX + 22, winY + winH + 8, 11);
+    g.fillCircle(winX + 42, winY + winH + 5, 7);
+    g.fillStyle(0x223828);
+    g.fillRect(winX + 20, winY + winH + 8, 3, 10);
+    g.fillRect(winX + 40, winY + winH + 5, 3, 13);
+    g.fillStyle(0x1a3820);
+    g.fillCircle(winX + winW - 22, winY + winH + 8, 9);
+    g.fillStyle(0x8ab0d0, 0.03);
+    g.fillTriangle(winX + 40, winY + winH + 20, winX + winW - 40, winY + winH + 20, winX + winW / 2, this.floorY);
+
+    // ── ARMÁRIO AÉREO DIREITO — prateleiras abertas ──
+    const shelf1X = 834;
+    g.fillStyle(0xd0d8e0);
+    g.fillRect(shelf1X, aereoY, 10, aereoH);
+    g.fillRect(shelf1X + 330, aereoY, 10, aereoH);
+    g.fillRect(shelf1X, aereoY, 340, 10);
+    g.fillRect(shelf1X, aereoY + (aereoH / 2), 340, 6);
+    g.fillRect(shelf1X, aereoY + aereoH, 340, 6);
+    g.fillStyle(0x6a8a5a, 0.9);
+    g.fillCircle(shelf1X + 28, aereoY + 46, 18);
+    g.fillCircle(shelf1X + 56, aereoY + 50, 13);
+    g.fillStyle(0x8a6a4a, 0.85);
+    g.fillRect(shelf1X + 78, aereoY + 18, 14, 50);
+    g.fillRect(shelf1X + 96, aereoY + 24, 12, 44);
+    g.fillStyle(0x4a7a8a, 0.8);
+    g.fillCircle(shelf1X + 128, aereoY + 50, 15);
+    g.fillStyle(0x8a9a5a, 0.8);
+    g.fillRect(shelf1X + 152, aereoY + 22, 18, 46);
+    g.fillStyle(0x6a5a8a, 0.7);
+    g.fillCircle(shelf1X + 186, aereoY + 44, 14);
+    g.fillCircle(shelf1X + 210, aereoY + 48, 10);
+    g.fillStyle(0x9a7a5a, 0.85);
+    g.fillRect(shelf1X + 228, aereoY + 16, 16, 52);
+    g.fillStyle(0x5a8a6a, 0.8);
+    g.fillCircle(shelf1X + 260, aereoY + 46, 13);
+    g.fillCircle(shelf1X + 282, aereoY + 50, 9);
+    g.fillStyle(0x7a6a4a, 0.75);
+    g.fillRect(shelf1X + 300, aereoY + 22, 12, 46);
+    g.fillStyle(0x4a6a8a, 0.8);
+    g.fillRect(shelf1X + 14, aereoY + aereoH / 2 + 14, 30, 22);
+    g.fillRect(shelf1X + 50, aereoY + aereoH / 2 + 18, 24, 18);
+    g.fillStyle(0x8a7a5a, 0.8);
+    g.fillCircle(shelf1X + 96, aereoY + aereoH / 2 + 24, 12);
+    g.fillStyle(0x5a7a6a, 0.75);
+    g.fillRect(shelf1X + 118, aereoY + aereoH / 2 + 10, 20, 26);
+    g.fillStyle(0x6a8a7a, 0.8);
+    g.fillCircle(shelf1X + 154, aereoY + aereoH / 2 + 22, 14);
+    g.fillCircle(shelf1X + 178, aereoY + aereoH / 2 + 26, 10);
+    g.fillStyle(0x9a8a6a, 0.7);
+    g.fillRect(shelf1X + 200, aereoY + aereoH / 2 + 12, 16, 24);
+    g.fillStyle(0x4a6a7a, 0.8);
+    g.fillCircle(shelf1X + 232, aereoY + aereoH / 2 + 20, 12);
+    g.fillRect(shelf1X + 254, aereoY + aereoH / 2 + 14, 22, 22);
+    g.fillCircle(shelf1X + 290, aereoY + aereoH / 2 + 24, 10);
+    g.fillStyle(0x7a5a4a, 0.75);
+    g.fillRect(shelf1X + 312, aereoY + aereoH / 2 + 10, 14, 26);
+
+    // ── DIVISÓRIA: armário aéreo dir | exaustor ──────
+    g.fillStyle(0x4a6858, 0.4);
+    g.fillRect(1133, topMargin, 5, this.floorY - topMargin - ch);
+
+    // ── EXAUSTOR + PAREDE DIREITA ─────────────────────
+    g.fillStyle(0xc8d4dc);
+    g.fillRect(1138, aereoY, 262, aereoH + 20);
+    g.fillStyle(0xb8c4cc);
+    g.fillRect(1155, aereoY + aereoH + 20, 228, 16);
+    g.fillRect(1172, aereoY + aereoH + 36, 194, 10);
+    g.lineStyle(1, 0x4a6a7a, 0.25);
+    for (let tx = 1138; tx < 1400; tx += 20) {
+      for (let ty = aereoY + aereoH + 46; ty < this.floorY - ch; ty += 20) {
+        g.strokeRect(tx, ty, 18, 18);
+      }
+    }
+
+    // ── BANCADA INFERIOR ─────────────────────────────
+    g.fillStyle(0xa8b4c0);
+    g.fillRect(140, this.floorY - ch, 1260, ch);
+    g.fillStyle(0xbcc8d4);
+    g.fillRect(140, this.floorY - ch - 6, 1260, 8);
+    g.fillStyle(0x060e18, 0.3);
+    g.fillRect(140, this.floorY - ch + 3, 1260, 5);
+
+    // ── GAVETAS INTERATIVAS ───────────────────────────
+    [155, 248, 342, 436].forEach((x, i) => {
+      g.fillStyle(0xd8e0e8);
+      g.fillRect(x, this.floorY - ch + 5, 85, ch - 8);
+      g.fillStyle(0xb8c4cc);
+      g.fillRect(x + 2, this.floorY - ch + 5, 81, (ch - 10) / 2);
+      g.fillRect(x + 2, this.floorY - ch + 7 + (ch - 10) / 2, 81, (ch - 12) / 2);
+      g.lineStyle(1, 0xa8b4c0);
+      g.strokeRect(x + 2, this.floorY - ch + 5, 81, (ch - 10) / 2);
+      g.strokeRect(x + 2, this.floorY - ch + 7 + (ch - 10) / 2, 81, (ch - 12) / 2);
+      g.fillStyle(0x9898a8);
+      g.fillRect(x + 26, this.floorY - ch + 18, 34, 4);
+      g.fillRect(x + 26, this.floorY - ch + 38, 34, 4);
+      const zone = this.add.zone(x + 42, this.floorY - ch / 2, 85, ch);
+      this.physics.add.existing(zone, true);
+      this.drawers.push({ zone, hasKey: i === 2, searched: false });
+    });
+
+    // ── ARMÁRIOS BAIXOS ───────────────────────────────
+    [540, 640, 740, 840, 940, 1040].forEach(x => {
+      g.fillStyle(0xd8e0e8);
+      g.fillRect(x + 3, this.floorY - ch + 5, 88, ch - 8);
+      g.lineStyle(1, 0xa8b4c0);
+      g.strokeRect(x + 5, this.floorY - ch + 7, 84, ch - 12);
+      g.fillStyle(0x9898a8);
+      g.fillRect(x + 36, this.floorY - ch + 26, 22, 4);
+    });
+
+    // ── PIA ──────────────────────────────────────────
+    g.fillStyle(0x8898a8);
+    g.fillRect(680 * s, this.floorY - ch + 6, 180, ch - 10);
+    g.fillStyle(0x687888);
+    g.fillRect(698 * s, this.floorY - ch + 12, 144, ch - 20);
+    g.fillStyle(0x9aaabb);
+    g.fillRect(762 * s, this.floorY - ch - 24, 6, 24);
+    g.fillRect(750 * s, this.floorY - ch - 26, 28, 6);
+    g.fillRect(774 * s, this.floorY - ch - 24, 6, 12);
+    g.fillStyle(0x1a3820);
+    g.fillCircle(695 * s, this.floorY - ch - 10, 10);
+    g.fillCircle(714 * s, this.floorY - ch - 14, 7);
+    g.fillStyle(0x223828);
+    g.fillRect(693 * s, this.floorY - ch - 10, 3, 10);
+    g.fillRect(712 * s, this.floorY - ch - 14, 3, 14);
+
+    // ── BANCADA DIREITA — objetos decorativos ─────────
+    g.fillStyle(0xd8e0e8);
+    g.fillRect(1143, this.floorY - ch + 5, 252, ch - 8);
+    g.lineStyle(1, 0xa8b4c0);
+    g.strokeRect(1145, this.floorY - ch + 7, 248, ch - 12);
+    g.fillStyle(0x7a9e6a, 0.9);
+    g.fillRect(1158, this.floorY - ch - 34, 16, 30);
+    g.fillRect(1180, this.floorY - ch - 30, 14, 26);
+    g.fillRect(1200, this.floorY - ch - 38, 15, 34);
+    g.fillStyle(0x788898);
+    g.fillRect(1240, this.floorY - ch - 42, 4, 38);
+    g.fillRect(1248, this.floorY - ch - 40, 4, 36);
+    g.fillRect(1256, this.floorY - ch - 44, 4, 40);
+    g.fillRect(1236, this.floorY - ch - 46, 30, 5);
+
+    // ── ARMÁRIO ESCONDERIJO ───────────────────────────
+    const hideX = 1060;
+    g.fillStyle(0xd8e0e8);
+    g.fillRect(hideX, this.floorY - ch - 120, 80, 120);
+    g.lineStyle(1, 0xa8b4c0);
+    g.strokeRect(hideX + 3, this.floorY - ch - 117, 74, 56);
+    g.strokeRect(hideX + 3, this.floorY - ch - 57, 74, 53);
+    g.fillStyle(0x9898a8);
+    g.fillRect(hideX + 28, this.floorY - ch - 92, 24, 5);
+    g.fillRect(hideX + 28, this.floorY - ch - 33, 24, 5);
+    const hideZone = this.add.zone(hideX + 40, this.floorY - ch - 60, 80, 120);
+    this.physics.add.existing(hideZone, true);
+    this.wardrobes.push(hideZone);
+
+    // ── LUMINÁRIAS ────────────────────────────────────
+    [240, 480, 720].forEach(x => {
+      g.fillStyle(0x788898);
+      g.fillRect(x, 22, 3, topMargin - 22);
+      g.fillStyle(0xc8d4dc);
+      g.fillEllipse(x + 1, topMargin + 14, 30, 24);
+      g.fillStyle(0xeef8ff, 0.25);
+      g.fillEllipse(x + 1, topMargin + 18, 20, 14);
+      g.fillStyle(0x8ab0cc, 0.05);
+      g.fillTriangle(x - 60, topMargin + 26, x + 62, topMargin + 26, x + 1, this.floorY);
+    });
+
+    // ── DETALHES ──────────────────────────────────────
+    g.fillStyle(0x5a7868);
+    g.fillRect(460, 260, 14, 18);
+    g.lineStyle(1, 0x4a6858);
+    g.strokeRect(462, 262, 10, 14);
+    g.fillStyle(0x5a7868);
+    g.fillRect(940, 260, 14, 18);
+    g.strokeRect(942, 262, 10, 14);
+    g.fillStyle(0x5a7868);
+    g.fillRect(840, 230, 70, 50);
+    g.fillStyle(0x6a8878, 0.5);
+    g.fillRect(845, 235, 60, 40);
+    g.lineStyle(2, 0x4a6858);
+    g.strokeRect(843, 233, 64, 44);
+
+    this.add.text(700, 12, 'COZINHA', {
+      fontSize: '9px', fontFamily: 'Courier New',
+      color: '#6a7a8a', letterSpacing: 3
+    }).setOrigin(0.5).setDepth(2);
+  }
+  // ─── JARDIM + PISCINA ─────────────────────────────
+  buildGardenPool() {
+    const g = this.add.graphics().setDepth(1);
+    const s = this.s;
+    const startX = 1400 * s;
+
+    // Céu noturno
+    g.fillStyle(0x0a0f1a);
+    g.fillRect(startX, 0, 1400 * s, GAME_H);
+
+    // Grama
+    g.fillStyle(0x1a3a1a);
+    g.fillRect(startX, this.floorY, 1400 * s, 80 * s);
+    g.fillStyle(0x224422);
+    g.fillRect(startX, this.floorY, 1400 * s, 4 * s);
+
+    // Física do chão jardim
+    const floor = this.add.rectangle(startX + 700 * s, this.floorY + 30 * s, 1400 * s, 60 * s).setVisible(false);
+    this.physics.add.existing(floor, true);
+    this.platforms.add(floor);
+
+    // Lua
+    g.fillStyle(0xfffde0, 0.9);
+    g.fillCircle(startX + 200 * s, 60 * s, 35 * s);
+    g.fillStyle(0xf5f0cc, 0.15);
+    g.fillCircle(startX + 200 * s, 60 * s, 55 * s);
+
+    // Estrelas
+    for (let i = 0; i < 40; i++) {
+      const sx = startX + Phaser.Math.Between(0, 1400) * s;
+      const sy = Phaser.Math.Between(0, 200) * s;
+      g.fillStyle(0xffffff, Math.random() * 0.8 + 0.2);
+      g.fillCircle(sx, sy, Phaser.Math.Between(1, 2) * s);
+    }
+
+    // Árvores e arbustos — Jeremiah pode sair de trás
+    const trees = [
+      { x: 100, h: 180, w: 60 },
+      { x: 400, h: 150, w: 50 },
+      { x: 700, h: 200, w: 70 },
+      { x: 1000, h: 160, w: 55 },
     ];
 
-    platforms.forEach(p => {
-      g.fillStyle(0x161628);
-      g.fillRect(p.x, p.y, p.w, 16);
-      g.fillStyle(0x2a2848, 0.8);
-      g.fillRect(p.x, p.y, p.w, 3);
-
-      const plat = this.add.rectangle(p.x + p.w / 2, p.y + 8, p.w, 16).setVisible(false);
-      this.physics.add.existing(plat, true);
-      this.platforms.add(plat);
+    trees.forEach(t => {
+      // Tronco
+      g.fillStyle(0x3a2a1a);
+      g.fillRect(startX + t.x * s + (t.w * s / 2) - 8 * s, this.floorY - t.h * s, 16 * s, t.h * s);
+      // Copa em camadas
+      g.fillStyle(0x0d2a0d);
+      g.fillTriangle(
+        startX + t.x * s, this.floorY - t.h * s * 0.5,
+        startX + t.x * s + t.w * s, this.floorY - t.h * s * 0.5,
+        startX + t.x * s + (t.w * s / 2), this.floorY - t.h * s
+      );
+      g.fillStyle(0x102e10);
+      g.fillTriangle(
+        startX + t.x * s + 5 * s, this.floorY - t.h * s * 0.3,
+        startX + t.x * s + t.w * s - 5 * s, this.floorY - t.h * s * 0.3,
+        startX + t.x * s + (t.w * s / 2), this.floorY - t.h * s * 0.8
+      );
+      g.fillStyle(0x143414);
+      g.fillTriangle(
+        startX + t.x * s + 10 * s, this.floorY - t.h * s * 0.1,
+        startX + t.x * s + t.w * s - 10 * s, this.floorY - t.h * s * 0.1,
+        startX + t.x * s + (t.w * s / 2), this.floorY - t.h * s * 0.6
+      );
     });
+
+    // Arbustos interativos — esconderijo do player
+    const bushes = [
+      { x: 250, w: 80 },
+      { x: 600, w: 70 },
+      { x: 950, w: 90 },
+    ];
+
+    bushes.forEach(b => {
+      g.fillStyle(0x0d2a0d);
+      g.fillEllipse(startX + b.x * s + (b.w * s / 2), this.floorY - 25 * s, b.w * s, 50 * s);
+      g.fillStyle(0x102e10);
+      g.fillEllipse(startX + b.x * s + (b.w * s / 2) - 15 * s, this.floorY - 30 * s, b.w * s * 0.6, 40 * s);
+      g.fillStyle(0x143414);
+      g.fillEllipse(startX + b.x * s + (b.w * s / 2) + 10 * s, this.floorY - 28 * s, b.w * s * 0.5, 35 * s);
+
+      const zone = this.add.zone(startX + b.x * s + (b.w * s / 2), this.floorY - 25 * s, b.w * s, 50 * s);
+      this.physics.add.existing(zone, true);
+      this.wardrobes.push(zone);
+    });
+
+    // Muro com plataforma para escapar
+    g.fillStyle(0xd4c8b0);
+    g.fillRect(startX + 500 * s, this.floorY - 120 * s, 200 * s, 20 * s);
+    g.fillRect(startX + 500 * s, this.floorY - 120 * s, 200 * s, 4 * s);
+    const muro = this.add.rectangle(startX + 600 * s, this.floorY - 110 * s, 200 * s, 20 * s).setVisible(false);
+    this.physics.add.existing(muro, true);
+    this.platforms.add(muro);
+
+    g.fillStyle(0xd4c8b0);
+    g.fillRect(startX + 900 * s, this.floorY - 150 * s, 180 * s, 20 * s);
+    const muro2 = this.add.rectangle(startX + 990 * s, this.floorY - 140 * s, 180 * s, 20 * s).setVisible(false);
+    this.physics.add.existing(muro2, true);
+    this.platforms.add(muro2);
+
+    // Piscina
+    const poolX = startX + 800 * s;
+    const poolW = 500 * s;
+    const poolY = this.floorY - 60 * s;
+    const poolH = 60 * s;
+
+    g.fillStyle(0x1a5f8a);
+    g.fillRect(poolX, poolY, poolW, poolH);
+    // Brilho da piscina
+    g.fillStyle(0x2288cc, 0.3);
+    g.fillRect(poolX, poolY, poolW, 8 * s);
+    g.fillStyle(0x44aaff, 0.15);
+    g.fillRect(poolX + 20 * s, poolY + 15 * s, poolW - 40 * s, 4 * s);
+    g.fillRect(poolX + 40 * s, poolY + 30 * s, poolW - 80 * s, 3 * s);
+    // Borda da piscina
+    g.fillStyle(0xe8e0d0);
+    g.fillRect(poolX - 10 * s, poolY - 8 * s, poolW + 20 * s, 10 * s);
+    g.fillRect(poolX - 10 * s, poolY + poolH, poolW + 20 * s, 10 * s);
+
+    // Luz azul animada da piscina
+    const poolGlow = this.add.rectangle(poolX + poolW / 2, poolY + poolH / 2, poolW, poolH, 0x1188ee, 0.12).setDepth(2);
+    this.tweens.add({
+      targets: poolGlow,
+      alpha: { from: 0.08, to: 0.18 },
+      duration: 1800,
+      yoyo: true,
+      repeat: -1
+    });
+
+    // Zona da piscina — mergulhar para se esconder
+    this.poolZone = this.add.zone(poolX + poolW / 2, poolY + poolH / 2, poolW, poolH);
+    this.physics.add.existing(this.poolZone, true);
+
+    // Física da borda da piscina (player anda em cima)
+    const poolEdge = this.add.rectangle(poolX + poolW / 2, poolY - 4 * s, poolW, 8 * s).setVisible(false);
+    this.physics.add.existing(poolEdge, true);
+    this.platforms.add(poolEdge);
   }
 
-  createTorches() {
-    const g = this.add.graphics();
-    const positions = [100, 400, 700, 1000, 1300, 1600, 1900];
+  // ─── PIER ─────────────────────────────────────────
+  buildPier() {
+    const g = this.add.graphics().setDepth(1);
+    const s = this.s;
+    const startX = 2800 * s;
 
-    positions.forEach(x => {
-      // Suporte da tocha
-      g.fillStyle(0x550000, 0.6);
-      g.fillRect(x - 2, this.floorY - 130, 4, 25);
+    // Céu noturno continuando
+    g.fillStyle(0x080d18);
+    g.fillRect(startX, 0, 600 * s, GAME_H);
 
-      // Chama avermelhada
-      g.fillStyle(0xdd2222, 0.7);
-      g.fillCircle(x, this.floorY - 138, 6);
+    // Água
+    g.fillStyle(0x0a2a3a);
+    g.fillRect(startX, this.floorY - 20 * s, 600 * s, 100 * s);
+    g.fillStyle(0x0d3a4a, 0.5);
+    g.fillRect(startX, this.floorY - 20 * s, 600 * s, 6 * s);
 
-      // Brilho animado
-      const glow = this.add.rectangle(x, this.floorY - 138, 28, 28, 0xdd2222, 0.05);
-      this.tweens.add({
-        targets: glow,
-        alpha: { from: 0.02, to: 0.09 },
-        duration: 600,
-        yoyo: true,
-        repeat: -1
+    // Reflexo da lua na água
+    g.fillStyle(0xfffde0, 0.06);
+    g.fillRect(startX + 200 * s, this.floorY - 15 * s, 80 * s, 80 * s);
+
+    // Estrutura do pier
+    g.fillStyle(0x5a3a1a);
+    g.fillRect(startX, this.floorY - 30 * s, 600 * s, 12 * s); // chão do pier
+    // Vigas do pier
+    [50, 150, 250, 350, 450, 550].forEach(x => {
+      g.fillStyle(0x4a2a10);
+      g.fillRect(startX + x * s, this.floorY - 20 * s, 10 * s, 80 * s);
+    });
+
+    // Cobertura do gazebo no final
+    g.fillStyle(0x4a3010);
+    g.fillTriangle(
+      startX + 350 * s, this.floorY - 180 * s,
+      startX + 600 * s, this.floorY - 180 * s,
+      startX + 480 * s, this.floorY - 280 * s
+    );
+    g.fillRect(startX + 350 * s, this.floorY - 180 * s, 250 * s, 15 * s);
+    // Colunas do gazebo
+    g.fillStyle(0x5a3a1a);
+    g.fillRect(startX + 360 * s, this.floorY - 165 * s, 12 * s, 135 * s);
+    g.fillRect(startX + 578 * s, this.floorY - 165 * s, 12 * s, 135 * s);
+
+    // Física do pier
+    const pierFloor = this.add.rectangle(startX + 300 * s, this.floorY - 24 * s, 600 * s, 12 * s).setVisible(false);
+    this.physics.add.existing(pierFloor, true);
+    this.platforms.add(pierFloor);
+
+    // Luzes de fada — string lights
+    const pierGfx = this.add.graphics().setDepth(3);
+    const lightPositions = [];
+    for (let i = 0; i <= 12; i++) {
+      lightPositions.push({
+        x: startX + i * 48 * s,
+        y: this.floorY - 120 * s + Math.sin(i * 0.5) * 15 * s
       });
+    }
+    // Fio
+    pierGfx.lineStyle(1 * s, 0x5a4a2a, 0.6);
+    pierGfx.beginPath();
+    lightPositions.forEach((p, i) => {
+      if (i === 0) pierGfx.moveTo(p.x, p.y);
+      else pierGfx.lineTo(p.x, p.y);
+    });
+    pierGfx.strokePath();
+    // Bolinhas de luz
+    lightPositions.forEach(p => {
+      pierGfx.fillStyle(0xffee88, 0.9);
+      pierGfx.fillCircle(p.x, p.y, 3 * s);
+      pierGfx.fillStyle(0xffee88, 0.15);
+      pierGfx.fillCircle(p.x, p.y, 8 * s);
+    });
+
+    // Brilho animado das luzes de fada
+    const fairyGlow = this.add.rectangle(startX + 300 * s, this.floorY - 120 * s, 600 * s, 60 * s, 0xffee44, 0.04).setDepth(2);
+    this.tweens.add({
+      targets: fairyGlow,
+      alpha: { from: 0.02, to: 0.07 },
+      duration: 2000,
+      yoyo: true,
+      repeat: -1
     });
   }
 
-  createWallCracks() {
-    const g = this.add.graphics();
-    const positions = [300, 700, 1200, 1600];
-
-    positions.forEach(x => {
-      g.lineStyle(1, 0x221122, 0.8);
-      g.beginPath();
-      g.moveTo(x, 30);
-      g.lineTo(x - 10, 80);
-      g.lineTo(x + 5, 120);
-      g.lineTo(x - 8, 160);
-      g.strokePath();
-    });
+  setupWorld() {
+    this.physics.world.setBounds(0, 0, this.worldWidth, GAME_H);
+    this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_H);
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
   }
 
+  // ─── JEREMIAH ─────────────────────────────────────
   createJeremiah() {
-    this.jeremiah = this.physics.add.sprite(900, this.floorY - 60)
+    this.jeremiah = this.physics.add.sprite(1600 * this.s, this.floorY - 60 * this.s)
       .setVisible(false)
       .setCollideWorldBounds(true);
 
-    this.jeremiah.body.setSize(30, 60);
-    this.jeremiah.body.setGravityY(400);
+    this.jeremiah.body.setSize(30 * this.s, 60 * this.s);
+    this.jeremiah.body.setGravityY(400 * this.s);
+    this.jeremiahGfx = this.add.graphics().setDepth(6);
 
-    this.jeremiahGfx = this.add.graphics();
-
-    // "Oi, Bells..." popup
     this.hibells = this.add.text(0, 0, '"Oi, Bells..."', {
-      fontSize: '13px',
+      fontSize: `${13 * this.s}px`,
       fontFamily: 'Courier New',
       color: '#aaffaa',
-      letterSpacing: 1,
+      letterSpacing: 1 * this.s,
       backgroundColor: '#0a1a0a',
-      padding: { x: 6, y: 4 }
+      padding: { x: 6 * this.s, y: 4 * this.s }
     }).setOrigin(0.5).setAlpha(0).setDepth(10);
   }
 
@@ -851,190 +1368,173 @@ class Phase2Scene extends BaseScene {
     const x = this.jeremiah.x;
     const y = this.jeremiah.y;
     const g = this.jeremiahGfx;
-
+    const s = this.s;
     g.clear();
 
     const color = this.jeremiahLooking ? 0x88ff88 : 0x447744;
 
-    // Corpo
     g.fillStyle(color, this.jeremiahLooking ? 0.9 : 0.7);
-    g.fillRect(x - 12, y - 58, 24, 35);
-
-    // Cabeça
+    g.fillRect(x - 12 * s, y - 58 * s, 24 * s, 35 * s);
     g.fillStyle(color, this.jeremiahLooking ? 1 : 0.8);
-    g.fillRect(x - 10, y - 82, 20, 22);
-
-    // Olhos (brilhantes)
+    g.fillRect(x - 10 * s, y - 82 * s, 20 * s, 22 * s);
     g.fillStyle(0xeeffee);
-    g.fillCircle(x - 4, y - 72, this.jeremiahLooking ? 5 : 3);
-    g.fillCircle(x + 4, y - 72, this.jeremiahLooking ? 5 : 3);
-
-    // Pupilas
+    g.fillCircle(x - 4 * s, y - 72 * s, (this.jeremiahLooking ? 5 : 3) * s);
+    g.fillCircle(x + 4 * s, y - 72 * s, (this.jeremiahLooking ? 5 : 3) * s);
     g.fillStyle(0x00aa00);
-    g.fillCircle(x - 4, y - 72, this.jeremiahLooking ? 2 : 1);
-    g.fillCircle(x + 4, y - 72, this.jeremiahLooking ? 2 : 1);
-
-    // Pernas
+    g.fillCircle(x - 4 * s, y - 72 * s, (this.jeremiahLooking ? 2 : 1) * s);
+    g.fillCircle(x + 4 * s, y - 72 * s, (this.jeremiahLooking ? 2 : 1) * s);
     g.fillStyle(color, 0.7);
-    g.fillRect(x - 10, y - 22, 9, 22);
-    g.fillRect(x + 1, y - 22, 9, 22);
-
-    // Braços longos
-    g.fillRect(x - 18, y - 56, 6, 28);
-    g.fillRect(x + 12, y - 56, 6, 28);
+    g.fillRect(x - 10 * s, y - 22 * s, 9 * s, 22 * s);
+    g.fillRect(x + 1 * s, y - 22 * s, 9 * s, 22 * s);
+    g.fillRect(x - 18 * s, y - 56 * s, 6 * s, 28 * s);
+    g.fillRect(x + 12 * s, y - 56 * s, 6 * s, 28 * s);
 
     if (this.jeremiahLooking) {
-      // Brilho quando olhando
       g.fillStyle(0x00ff00, 0.08);
-      g.fillCircle(x, y - 50, 50);
+      g.fillCircle(x, y - 50 * s, 50 * s);
     }
   }
 
-  createWardrobes() {
-    const g = this.add.graphics();
-    const positions = [150, 600, 1000, 1500, 1850];
-
-    positions.forEach(x => {
-      // Armário
-      g.fillStyle(0x2a1a1a);
-      g.fillRect(x, this.floorY - 80, 36, 80);
-      g.lineStyle(1, 0x553333, 0.8);
-      g.strokeRect(x, this.floorY - 80, 36, 80);
-
-      // Maçaneta
-      g.fillStyle(0x441111, 0.5);
-      g.fillRect(x + 16, this.floorY - 45, 4, 20);
-
-      // Rótulo
-      this.add.text(x + 18, this.floorY - 92, 'ARMÁRIO', {
-        fontSize: '8px',
-        fontFamily: 'Courier New',
-        color: '#443333',
-        letterSpacing: 1
-      }).setOrigin(0.5);
-
-      const zone = this.add.zone(x + 18, this.floorY - 40, 50, 80);
-      this.physics.add.existing(zone, true);
-      this.wardrobes.push(zone);
-    });
-  }
-
   checkJeremiah() {
-    if (this.inWardrobe) {
+    // Escondido em qualquer lugar — Jeremiah não vê
+    if (this.inWardrobe || this.inBush || this.inPool) {
       this.jeremiahLooking = false;
       return;
     }
 
     const dx = Math.abs(this.player.x - this.jeremiah.x);
     const dy = Math.abs(this.player.y - this.jeremiah.y);
-
     const facingRight = this.jeremiahDir > 0;
     const playerInFront = facingRight ?
       (this.player.x > this.jeremiah.x) :
       (this.player.x < this.jeremiah.x);
 
-    if (dx < 220 && dy < 90 && playerInFront && !this.hitCooldown) {
+    if (dx < 220 * this.s && dy < 90 * this.s && playerInFront && !this.hitCooldown) {
       this.jeremiahLooking = true;
       this.hitCooldown = true;
 
-      // Mostra "Oi, Bells..."
-      this.hibells.setPosition(this.jeremiah.x, this.jeremiah.y - 110).setAlpha(1);
+      this.hibells.setPosition(this.jeremiah.x, this.jeremiah.y - 110 * this.s).setAlpha(1);
       this.tweens.killTweensOf(this.hibells);
-      this.tweens.add({
-        targets: this.hibells,
-        alpha: 0,
-        duration: 1000,
-        delay: 1000
-      });
+      this.tweens.add({ targets: this.hibells, alpha: 0, duration: 1000, delay: 1000 });
 
       if (GameState.damage(2)) {
         this.transitionTo('GameOverScene');
         return;
       }
 
-      // Flash de dano
       const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x00ff00, 0.25)
         .setScrollFactor(0).setDepth(25);
-      this.tweens.add({
-        targets: flash,
-        alpha: 0,
-        duration: 700,
-        onComplete: () => flash.destroy()
-      });
-
+      this.tweens.add({ targets: flash, alpha: 0, duration: 700, onComplete: () => flash.destroy() });
       this.time.delayedCall(4000, () => { this.hitCooldown = false; });
-    } else if (dx >= 220 || !playerInFront) {
+    } else if (dx >= 220 * this.s || !playerInFront) {
       this.jeremiahLooking = false;
+    }
+  }
+
+  checkDrawers() {
+    for (let d of this.drawers) {
+      if (d.searched) continue;
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, d.zone.x, d.zone.y);
+      if (dist < 70 * this.s) {
+        d.searched = true;
+        if (d.hasKey) {
+          this.keyFound = true;
+          const msg = this.add.text(GAME_W / 2, GAME_H / 2 - 20, TEXTS.KEY_FOUND, {
+            fontSize: `${13 * this.s}px`,
+            fontFamily: 'Courier New',
+            color: '#ffdd44',
+            letterSpacing: 2 * this.s
+          }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
+          this.tweens.add({ targets: msg, alpha: 0, duration: 800, delay: 2000, onComplete: () => msg.destroy() });
+        } else {
+          const msg = this.add.text(GAME_W / 2, GAME_H / 2 - 20, 'Vazio...', {
+            fontSize: `${13 * this.s}px`,
+            fontFamily: 'Courier New',
+            color: '#888888',
+            letterSpacing: 2 * this.s
+          }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
+          this.tweens.add({ targets: msg, alpha: 0, duration: 600, delay: 1000, onComplete: () => msg.destroy() });
+        }
+        return;
+      }
     }
   }
 
   handleInteract() {
     if (this.transitioning) return;
 
+    // Porta
     if (this.isNear(this.doorZone)) {
+      if (!this.keyFound) {
+        this.showLockedMessage();
+        return;
+      }
       this.sound.play('som_porta', { volume: 1.2, seek: 0.5 });
       this.transitionTo(this.doorDestination);
+      return;
     }
+
+    // Armários de cozinha e arbustos
+    for (let w of this.wardrobes) {
+      if (this.isNear(w)) {
+        this.inWardrobe = !this.inWardrobe;
+        this.inBush = false;
+        this.player.body.setAllowGravity(!this.inWardrobe);
+        if (this.inWardrobe) this.player.body.setVelocity(0, 0);
+        return;
+      }
+    }
+
+    // Piscina
+    if (this.isNear(this.poolZone)) {
+      this.inPool = !this.inPool;
+      this.player.body.setAllowGravity(!this.inPool);
+      if (this.inPool) this.player.body.setVelocity(0, 0);
+      return;
+    }
+
+    // Gavetas
+    this.checkDrawers();
   }
+
   update() {
+    super.update();
     if (this.transitioning) return;
 
-    // Detecta E manualmente
-    if (Phaser.Input.Keyboard.JustDown(this.eKey)) {
-      for (let w of this.wardrobes) {
-        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, w.x, w.y);
-        if (dist < 70) {
-          this.inWardrobe = !this.inWardrobe;
-          this.player.body.setAllowGravity(!this.inWardrobe);
-          if (this.inWardrobe) this.player.body.setVelocity(0, 0);
-          return;
-        }
-      }
-    }
-    if (this.transitioning) return;
-
-    if (this.inWardrobe) {
-      this.player.body.setVelocity(0, 0);
-      this.player.body.setAllowGravity(false);
-      this.playerGfx.clear();
-      this.playerShadow.clear();
-      this.jeremiah.body.setVelocityX(0);
-    } else {
-      this.player.body.setAllowGravity(true);
-      this.handleMovement();
-      this.drawPlayer();
+    // Jeremiah patrulha só no jardim/piscina (x: 1400-2800 em escala original)
+    if (!this.inWardrobe && !this.inBush && !this.inPool) {
       this.jeremiah.body.setVelocityX(this.jeremiahSpeed * this.jeremiahDir);
-      if (this.jeremiah.x > 1700 || this.jeremiah.x < 200) {
+      if (this.jeremiah.x > 2700 * this.s || this.jeremiah.x < 1450 * this.s) {
         this.jeremiahDir *= -1;
-        this.jeremiah.x = Phaser.Math.Clamp(this.jeremiah.x, 201, 1699);
+        this.jeremiah.x = Phaser.Math.Clamp(this.jeremiah.x, 1451 * this.s, 2699 * this.s);
       }
+    } else {
+      this.jeremiah.body.setVelocityX(0);
     }
 
     this.drawJeremiah();
     this.checkJeremiah();
 
-    if (this.activePrompt) {
-      this.activePrompt.x = this.player.x;
-      this.activePrompt.y = this.player.y - 70;
-    }
-
-    // Prompts (mantém igual)
-    let nearWardrobe = false;
-    for (let w of this.wardrobes) {
-      if (this.isNear(w)) { nearWardrobe = true; break; }
-    }
+    // Prompts
+    let nearWardrobe = this.wardrobes.some(w => this.isNear(w));
+    let nearPool = this.isNear(this.poolZone);
+    let nearDrawer = this.drawers.some(d => !d.searched && this.isNear(d.zone));
+    let nearDoor = this.isNear(this.doorZone);
 
     if (nearWardrobe && !this.activePrompt) {
-      this.createPrompt(this.inWardrobe ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70, '#44bbff');
-    } else if (this.isNear(this.exitZone) && !this.activePrompt && !nearWardrobe) {
-      this.createPrompt(TEXTS.ENTER);
-    } else if (!nearWardrobe && !this.isNear(this.exitZone) && this.activePrompt) {
+      this.createPrompt(this.inWardrobe ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70 * this.s, '#44bbff');
+    } else if (nearPool && !this.activePrompt) {
+      this.createPrompt(this.inPool ? '[E] Sair da piscina' : '[E] Mergulhar', -70 * this.s, '#44aaff');
+    } else if (nearDrawer && !this.activePrompt) {
+      this.createPrompt('[E] Vasculhar', -70 * this.s, '#ffdd88');
+    } else if (nearDoor && !this.activePrompt) {
+      this.createPrompt(this.keyFound ? TEXTS.ENTER : '🔒 Trancada', -70 * this.s, this.keyFound ? '#ffdd44' : '#ff6666');
+    } else if (!nearWardrobe && !nearPool && !nearDrawer && !nearDoor && this.activePrompt) {
       this.activePrompt.destroy();
       this.activePrompt = null;
     }
   }
 }
-
 // =============================================
 //  CENA: FASE 3 - SALA DO SALMÃO (COM DECORAÇÕES)
 // =============================================
@@ -1044,9 +1544,9 @@ class Phase3Scene extends BaseScene {
     this.worldWidth = 4000; // largura total do cenário
   }
   init() {
-  super.init();
-  this.worldWidth = 4000;
-}
+    super.init();
+    this.worldWidth = 4000;
+  }
   create() {
     super.create();
     GameState.door = 3;
@@ -1242,7 +1742,7 @@ class Phase3Scene extends BaseScene {
     this.physics.add.existing(this.doorZone, true);
     this.doorDestination = 'Phase4Scene';
   }
-  
+
   // Cria os salmões com posição, direção, velocidade e profundidade na água
   createSalmons() {
     this.salmonGfx = this.add.graphics().setDepth(4);
@@ -1272,7 +1772,7 @@ class Phase3Scene extends BaseScene {
       });
     });
   }
- 
+
 
   // Move, desenha e verifica colisão dos salmões a cada frame
   drawSalmons() {
@@ -1579,7 +2079,7 @@ class Phase3Scene extends BaseScene {
       this.activePrompt = null;
     }
   }
-  
+
 }
 
 // =============================================
