@@ -33,7 +33,7 @@ const TEXTS = {
   HIDE: '[E] Esconder',
   EXIT_HIDE: '[E] Sair',
   NEED_KEY: 'Pegue a chave!',
-  KEY_FOUND: 'Chave encontrada!\n\n Vá para a saída!',
+  KEY_FOUND: 'Chave encontrada',
   GAME_OVER: 'VOCÊ MORREU',
   TRY_AGAIN: 'Pressione R para tentar de novo',
   WIN: 'PARABÉNS!',
@@ -234,6 +234,7 @@ class BaseScene extends Phaser.Scene {
   }
 
   transitionTo(sceneKey) {
+    if (this.music) this.music.stop();
     this.transitioning = true;
     if (this.activePrompt) this.activePrompt.destroy();
     this.cameras.main.fadeOut(600, 0, 0, 0);
@@ -422,9 +423,13 @@ class BaseScene extends Phaser.Scene {
   preload() {
     // Músicas
     this.load.audio('musica_fase1', ['assets/audio/fase1.ogg', 'assets/audio/fase1.mp3']);
+    this.load.audio('musica_fase2', ['assets/audio/fase2.mp3', 'assets/audio/fase2.mp3']);
 
     this.load.audio('som_chave', 'assets/audio/key.ogg');
     this.load.audio('som_porta', 'assets/audio/door.ogg');
+    this.load.audio('som_gaveta', 'assets/audio/drawer.mp3');
+    this.load.audio('psst', 'assets/audio/psst.mp3');
+    this.load.audio('screech_jumpscare', 'assets/audio/screech jumpscare.mp3');
   }
 }
 // =============================================
@@ -491,7 +496,7 @@ class BootScene extends Phaser.Scene {
 
     this.input.keyboard.once('keydown', () => {
       this.cameras.main.fadeOut(600, 0, 0, 0);
-      this.time.delayedCall(620, () => this.scene.start('Phase2Scene'));
+      this.time.delayedCall(620, () => this.scene.start('Phase5Scene'));
     });
   }
 
@@ -520,6 +525,7 @@ class Phase1Scene extends BaseScene {
     this.keyFound = false;
     GameState.updateUI();
     this.showPhaseTitle(TEXTS.PHASE_1);
+    this.sound.stopAll();
     this.sound.play('musica_fase1', { loop: true, volume: 0.5 });
 
     this.platforms = this.physics.add.staticGroup();
@@ -719,6 +725,7 @@ class Phase2Scene extends BaseScene {
     super.init();
     this.worldWidth = 5100;
     this.floorY = GAME_H - 30; // ajustado para escala 1.5
+    this.passingThrough = false;
   }
 
   create() {
@@ -729,6 +736,8 @@ class Phase2Scene extends BaseScene {
     GameState.door = 2;
     GameState.updateUI();
     this.showPhaseTitle(TEXTS.PHASE_2);
+    this.sound.stopAll();
+    this.sound.play('musica_fase2', { loop: true, volume: 0.3, seek: 5 });
 
     this.platforms = this.physics.add.staticGroup();
     this.wardrobes = [];
@@ -785,12 +794,12 @@ class Phase2Scene extends BaseScene {
   // ─── COZINHA ──────────────────────────────────────
   buildKitchen() {
     const g = this.add.graphics().setDepth(1);
-    const s = this.s; // CORREÇÃO — era undefined, travando o create()
-    const ch = 75;    // bancada maior (era 55)
-    const topMargin = 55; // parede visível acima dos armários
+    const s = this.s;
+    const ch = 75;
+    const topMargin = 55;
 
     // ── PAREDE ───────────────────────────────────────
-    g.fillStyle(0x7a9e8a);
+    g.fillStyle(0xadebb3);
     g.fillRect(0, 0, 1400, GAME_H);
     g.fillStyle(0x081828, 0.55);
     g.fillRect(0, 0, 1400, GAME_H);
@@ -830,62 +839,79 @@ class Phase2Scene extends BaseScene {
     g.fillStyle(0x081828, 0.2);
     g.fillRect(135, 22, 8, this.floorY - 22);
 
-    // ── DIVISÓRIA: armário alto | armário aéreo esq ──
-    g.fillStyle(0x4a6858, 0.4);
-    g.fillRect(143, topMargin, 5, this.floorY - topMargin - ch);
-
-    // ── ARMÁRIO AÉREO ESQUERDO — grade com vidro ─────
-    const aereoY = topMargin+20;
+    // ── ARMÁRIO AÉREO ESQUERDO ───────────────────────
+    const aereoY = topMargin + 35;
     const aereoH = 210;
     g.fillStyle(0xd8e0e8);
-    g.fillRect(142, aereoY, 380, aereoH);
-    g.fillStyle(0xc8d4dc);
-    g.fillRect(335, aereoY, 8, aereoH);
-    const gridLeft = 142, gridRight = 343;
-    [gridLeft, gridRight].forEach(gx => {
-      const pw = (gx === gridLeft ? 179 : 177);
-      for (let col = 0; col < 2; col++) {
-        for (let row = 0; row < 3; row++) {
-          const vx = gx + 8 + col * (pw / 2 - 4);
-          const vy = aereoY + 8 + row * 66;
-          const vw = pw / 2 - 12;
-          const vh = 58;
-          g.fillStyle(0x050e1c, 0.35);
+    g.fillRect(142, aereoY, 380, aereoH); // corpo do armário
+
+    // trapézio fino em cima do armário esquerdo
+    const trapHEsq = 20;
+    g.fillStyle(0xd8e0e8);
+    g.fillPoints([
+      { x: 142, y: aereoY - trapHEsq },
+      { x: 142 + 380 + 14, y: aereoY - trapHEsq },
+      { x: 142 + 380, y: aereoY },
+      { x: 142, y: aereoY }
+    ], true);
+
+    // vidros (4 colunas x 3 linhas)
+    const totalCols = 4;
+    const totalRows = 3;
+    const padX = 10;
+    const padYTop = 26;
+    const padYBot = 16;
+    const gapX = 8;
+    const gapY = 3;
+    const vw = (380 - padX * 2 - gapX * (totalCols - 1)) / totalCols;
+    const vh = (aereoH - padYTop - padYBot - gapY * (totalRows - 1)) / totalRows;
+
+    for (let col = 0; col < totalCols; col++) {
+      for (let row = 0; row < totalRows; row++) {
+        const vx = 142 + padX + col * (vw + gapX);
+        const vy = aereoY + padYTop + row * (vh + gapY);
+
+        g.fillStyle(0x050e1c, 0.35);
+        if (row === 0 && col === 0) {
+          // vidro superior esquerdo — arredonda só o canto esquerdo
+          g.fillRoundedRect(vx, vy, vw, vh, { tl: 26, tr: 0, bl: 0, br: 0 });
+          g.strokeRoundedRect(vx, vy, vw, vh, { tl: 26, tr: 0, bl: 0, br: 0 });
+        } else if (row === 0 && col === totalCols - 1) {
+          // vidro superior direito — arredonda só o canto direito
+          g.fillRoundedRect(vx, vy, vw, vh, { tl: 0, tr: 26, bl: 0, br: 0 });
+          g.strokeRoundedRect(vx, vy, vw, vh, { tl: 0, tr: 26, bl: 0, br: 0 });
+        } else {
           g.fillRect(vx, vy, vw, vh);
           g.lineStyle(1, 0xc8d4dc);
           g.strokeRect(vx, vy, vw, vh);
         }
+
+        // borda do vidro
+        g.lineStyle(1, 0xc8d4dc);
+        if (row === 0) {
+          g.strokeRoundedRect(vx, vy, vw, vh, { tl: 5, tr: 5, bl: 0, br: 0 });
+        } else {
+          g.strokeRect(vx, vy, vw, vh);
+        }
       }
-      g.lineStyle(2, 0xb8c4cc);
-      g.strokeRect(gx + 4, aereoY + 4, pw - 8, aereoH - 8);
-    });
-    g.fillStyle(0x4a6a8a, 0.7);
-    g.fillRect(162, aereoY + 16, 10, 16);
-    g.fillRect(178, aereoY + 18, 8, 14);
-    g.fillRect(194, aereoY + 14, 12, 18);
-    g.fillStyle(0x3a5a78, 0.6);
-    g.fillRect(162, aereoY + 80, 12, 14);
-    g.fillRect(180, aereoY + 82, 10, 12);
-    g.fillStyle(0x4a7a5a, 0.5);
-    g.fillCircle(220, aereoY + 24, 8);
-    g.fillCircle(238, aereoY + 22, 6);
-    g.fillStyle(0x4a6870, 0.7);
-    g.fillRect(356, aereoY + 16, 10, 16);
-    g.fillRect(372, aereoY + 18, 12, 14);
-    g.fillRect(390, aereoY + 14, 8, 18);
-    g.fillStyle(0x3a5868, 0.6);
-    g.fillRect(356, aereoY + 80, 14, 14);
-    g.fillRect(376, aereoY + 82, 10, 12);
+    }
+
+    // moldura externa da porta
+    g.lineStyle(2, 0xb8c4cc);
+    g.strokeRect(142 + 4, aereoY + 4, 380 - 8, aereoH - 8);
+
+    // pés do armário
     g.fillStyle(0x8898a8);
-    g.fillRect(218, aereoY + aereoH + 8, 26, 5);
-    g.fillRect(400, aereoY + aereoH + 8, 26, 5);
+    g.fillRect(142, aereoY + aereoH, 5, 26);   // pé esquerdo
+    g.fillRect(517, aereoY + aereoH, 5, 26);   // pé direito
 
     // ── JANELA CENTRAL ───────────────────────────────
     const winX = 560, winY = topMargin + 5, winW = 240, winH = 275;
 
-    //fundo da janela
+    // fundo da janela
     g.fillStyle(0x040b18);
     g.fillRect(winX, winY, winW, winH);
+
     // estrelas
     [[570, winY + 12], [590, winY + 22], [614, winY + 8], [640, winY + 26],
     [666, winY + 14], [692, winY + 32], [718, winY + 10], [742, winY + 24],
@@ -919,8 +945,8 @@ class Phase2Scene extends BaseScene {
 
     // grades da janela
     g.fillRect(winX + winW / 2 - 4, winY, 8, winH);
-    g.fillRect(winX + winW / 4 - 4, winY, 8, winH / 2 - 3); //0+tamanho da janela/4 e recua 4px para centralizar a grade de 8px, começa do topo da janela, 8px de largura, largura da janela/2 e recua 3px para não encostar na grade horizontal do meio
-    g.fillRect(winX + winW / 4 * 3 - 4, winY, 8, winH / 2 - 3); // para a esquera = 1/4 da jabela, para a direita, 3/4, por isso 4*3
+    g.fillRect(winX + winW / 4 - 4, winY, 8, winH / 2 - 3);
+    g.fillRect(winX + winW / 4 * 3 - 4, winY, 8, winH / 2 - 3);
     g.fillRect(winX, winY + winH / 2 - 3, winW, 6);
     g.fillStyle(0xc8d4dc);
 
@@ -937,77 +963,99 @@ class Phase2Scene extends BaseScene {
     g.fillStyle(0x8ab0d0, 0.03);
     g.fillTriangle(winX + 40, winY + winH + 20, winX + winW - 40, winY + winH + 20, winX + winW / 2, this.floorY);
 
-    // ── ARMÁRIO AÉREO DIREITO — prateleiras abertas ──
+    // ── ARMÁRIO AÉREO DIREITO ─────────────────────────
     const shelf1X = 834;
-    g.fillStyle(0xd0d8e0);
-    g.fillRect(shelf1X, aereoY, 10, aereoH);
-    g.fillRect(shelf1X + 330, aereoY, 10, aereoH);
-    g.fillRect(shelf1X, aereoY, 340, 10);
-    g.fillRect(shelf1X, aereoY + (aereoH / 2), 340, 6);
-    g.fillRect(shelf1X, aereoY + aereoH, 340, 6);
-    g.fillStyle(0x6a8a5a, 0.9);
-    g.fillCircle(shelf1X + 28, aereoY + 46, 18);
-    g.fillCircle(shelf1X + 56, aereoY + 50, 13);
-    g.fillStyle(0x8a6a4a, 0.85);
-    g.fillRect(shelf1X + 78, aereoY + 18, 14, 50);
-    g.fillRect(shelf1X + 96, aereoY + 24, 12, 44);
-    g.fillStyle(0x4a7a8a, 0.8);
-    g.fillCircle(shelf1X + 128, aereoY + 50, 15);
-    g.fillStyle(0x8a9a5a, 0.8);
-    g.fillRect(shelf1X + 152, aereoY + 22, 18, 46);
-    g.fillStyle(0x6a5a8a, 0.7);
-    g.fillCircle(shelf1X + 186, aereoY + 44, 14);
-    g.fillCircle(shelf1X + 210, aereoY + 48, 10);
-    g.fillStyle(0x9a7a5a, 0.85);
-    g.fillRect(shelf1X + 228, aereoY + 16, 16, 52);
-    g.fillStyle(0x5a8a6a, 0.8);
-    g.fillCircle(shelf1X + 260, aereoY + 46, 13);
-    g.fillCircle(shelf1X + 282, aereoY + 50, 9);
-    g.fillStyle(0x7a6a4a, 0.75);
-    g.fillRect(shelf1X + 300, aereoY + 22, 12, 46);
-    g.fillStyle(0x4a6a8a, 0.8);
-    g.fillRect(shelf1X + 14, aereoY + aereoH / 2 + 14, 30, 22);
-    g.fillRect(shelf1X + 50, aereoY + aereoH / 2 + 18, 24, 18);
-    g.fillStyle(0x8a7a5a, 0.8);
-    g.fillCircle(shelf1X + 96, aereoY + aereoH / 2 + 24, 12);
-    g.fillStyle(0x5a7a6a, 0.75);
-    g.fillRect(shelf1X + 118, aereoY + aereoH / 2 + 10, 20, 26);
-    g.fillStyle(0x6a8a7a, 0.8);
-    g.fillCircle(shelf1X + 154, aereoY + aereoH / 2 + 22, 14);
-    g.fillCircle(shelf1X + 178, aereoY + aereoH / 2 + 26, 10);
-    g.fillStyle(0x9a8a6a, 0.7);
-    g.fillRect(shelf1X + 200, aereoY + aereoH / 2 + 12, 16, 24);
-    g.fillStyle(0x4a6a7a, 0.8);
-    g.fillCircle(shelf1X + 232, aereoY + aereoH / 2 + 20, 12);
-    g.fillRect(shelf1X + 254, aereoY + aereoH / 2 + 14, 22, 22);
-    g.fillCircle(shelf1X + 290, aereoY + aereoH / 2 + 24, 10);
-    g.fillStyle(0x7a5a4a, 0.75);
-    g.fillRect(shelf1X + 312, aereoY + aereoH / 2 + 10, 14, 26);
+    const aereoHDir = 210;
+    const aereoYDir = aereoY;
+    const shelf1W = 160;
+    const trapH = 20;
+    const bodyY = aereoYDir + trapH; // armário desce para dar espaço ao trapézio
 
-    // ── DIVISÓRIA: armário aéreo dir | exaustor ──────
-    g.fillStyle(0x4a6858, 0.4);
-    g.fillRect(1133, topMargin, 5, this.floorY - topMargin - ch);
+    // trapézio fino em cima do armário
+    g.fillStyle(0xd8e0e8);
+    g.fillPoints([
+      { x: shelf1X - 14, y: aereoYDir },
+      { x: shelf1X + shelf1W + 14, y: aereoYDir },
+      { x: shelf1X + shelf1W, y: bodyY },
+      { x: shelf1X, y: bodyY }
+    ], true);
 
-    // ── EXAUSTOR + PAREDE DIREITA ─────────────────────
-    g.fillStyle(0xc8d4dc);
-    g.fillRect(1138, aereoY, 262, aereoH + 20);
-    g.fillStyle(0xb8c4cc);
-    g.fillRect(1155, aereoY + aereoH + 20, 228, 16);
-    g.fillRect(1172, aereoY + aereoH + 36, 194, 10);
-    g.lineStyle(1, 0x4a6a7a, 0.25);
-    for (let tx = 1138; tx < 1400; tx += 20) {
-      for (let ty = aereoY + aereoH + 46; ty < this.floorY - ch; ty += 20) {
-        g.strokeRect(tx, ty, 18, 18);
+    // corpo do armário
+    g.fillRect(shelf1X, bodyY, shelf1W, aereoHDir);
+
+    // moldura sólida
+    const frameT = 12;
+    g.fillStyle(0xd8e0e8);
+    g.fillRect(shelf1X, bodyY, shelf1W, frameT);                       // topo
+    g.fillRect(shelf1X, bodyY + aereoHDir - frameT, shelf1W, frameT); // baixo
+    g.fillRect(shelf1X, bodyY, frameT, aereoHDir);                     // esquerda
+    g.fillRect(shelf1X + shelf1W - frameT, bodyY, frameT, aereoHDir); // direita
+
+    // divisória vertical central grossa
+    const divT = 20;
+    g.fillStyle(0xd8e0e8);
+    g.fillRect(shelf1X + shelf1W / 2 - divT / 2, bodyY + frameT, divT, aereoHDir - frameT * 2);
+
+    // configuração dos vidros
+    const s1Cols = 2;
+    const s1Rows = 2;
+    const divTH = 2;
+    const s1GapX = 4;
+    const s1GapY = 4;
+
+    const groupW = (shelf1W - frameT * 2 - divT) / 2;
+    const groupH = (aereoHDir - frameT * 2) / 2 - divTH / 2;
+    const s1vw = (groupW - s1GapX * (s1Cols - 1)) / s1Cols;
+    const s1vh = (groupH - s1GapY * (s1Rows - 1)) / s1Rows;
+
+    // divisória horizontal fina
+    g.lineStyle(1, 0xc8d4dc);
+    g.strokeRect(shelf1X + frameT, bodyY + aereoHDir / 2 - 1, shelf1W - frameT * 2, 1);
+
+    [shelf1X + frameT, shelf1X + frameT + groupW + divT].forEach(groupX => {
+      // grupo de cima
+      for (let col = 0; col < s1Cols; col++) {
+        for (let row = 0; row < s1Rows; row++) {
+          const vx = groupX + col * (s1vw + s1GapX);
+          const vy = bodyY + frameT + row * (s1vh + s1GapY);
+          g.fillStyle(0x050e1c, 0.35);
+          g.fillRect(vx, vy, s1vw, s1vh);
+          g.lineStyle(1, 0xc8d4dc);
+          g.strokeRect(vx, vy, s1vw, s1vh);
+        }
       }
-    }
 
-    // ── BANCADA INFERIOR ─────────────────────────────
+      // grupo de baixo
+      for (let col = 0; col < s1Cols; col++) {
+        for (let row = 0; row < s1Rows; row++) {
+          const vx = groupX + col * (s1vw + s1GapX);
+          const vy = bodyY + aereoHDir / 2 + divTH / 2 + row * (s1vh + s1GapY);
+          g.fillStyle(0x050e1c, 0.35);
+          g.fillRect(vx, vy, s1vw, s1vh);
+          g.lineStyle(1, 0xc8d4dc);
+          g.strokeRect(vx, vy, s1vw, s1vh);
+        }
+      }
+
+      // linha exatamente no meio da segunda linha de baixo para cima
+      const row2Y = bodyY + aereoHDir / 2 + divTH / 2;
+      const midLineY = row2Y + s1vh / 2;
+      g.lineStyle(1, 0xc8d4dc);
+      g.strokeRect(groupX, midLineY, groupW, 1);
+    });
+
+    // pés do armário
+    g.fillStyle(0x8898a8);
+    g.fillRect(shelf1X, bodyY + aereoHDir, 5, 26);
+    g.fillRect(shelf1X + shelf1W - 5, bodyY + aereoHDir, 5, 26);
+
+    // bancada termina antes da moldura
     g.fillStyle(0xa8b4c0);
-    g.fillRect(140, this.floorY - ch, 1260, ch);
+    g.fillRect(140, this.floorY - ch, 870, ch);
     g.fillStyle(0xbcc8d4);
-    g.fillRect(140, this.floorY - ch - 6, 1260, 8);
+    g.fillRect(140, this.floorY - ch - 6, 870, 8);
     g.fillStyle(0x060e18, 0.3);
-    g.fillRect(140, this.floorY - ch + 3, 1260, 5);
+    g.fillRect(140, this.floorY - ch + 3, 870, 5);
 
     // ── GAVETAS INTERATIVAS ───────────────────────────
     [155, 248, 342, 436].forEach((x, i) => {
@@ -1028,7 +1076,7 @@ class Phase2Scene extends BaseScene {
     });
 
     // ── ARMÁRIOS BAIXOS ───────────────────────────────
-    [540, 640, 740, 840, 940, 1040].forEach(x => {
+    [540, 640, 740, 840, 940].forEach(x => {
       g.fillStyle(0xd8e0e8);
       g.fillRect(x + 3, this.floorY - ch + 5, 88, ch - 8);
       g.lineStyle(1, 0xa8b4c0);
@@ -1038,49 +1086,49 @@ class Phase2Scene extends BaseScene {
     });
 
     // ── PIA ──────────────────────────────────────────
-    g.fillStyle(0x8898a8);
-    g.fillRect(680 * s, this.floorY - ch + 6, 180, ch - 10);
-    g.fillStyle(0x687888);
-    g.fillRect(698 * s, this.floorY - ch + 12, 144, ch - 20);
+    // torneira centralizada abaixo da janela
+    const tornX = winX + winW / 2;
+    const tornY = this.floorY - ch - 2;
+
+    // base da torneira
     g.fillStyle(0x9aaabb);
-    g.fillRect(762 * s, this.floorY - ch - 24, 6, 24);
-    g.fillRect(750 * s, this.floorY - ch - 26, 28, 6);
-    g.fillRect(774 * s, this.floorY - ch - 24, 6, 12);
-    g.fillStyle(0x1a3820);
-    g.fillCircle(695 * s, this.floorY - ch - 10, 10);
-    g.fillCircle(714 * s, this.floorY - ch - 14, 7);
-    g.fillStyle(0x223828);
-    g.fillRect(693 * s, this.floorY - ch - 10, 3, 10);
-    g.fillRect(712 * s, this.floorY - ch - 14, 3, 14);
+    g.fillRect(tornX - 14, tornY - 8, 28, 8);
 
-    // ── BANCADA DIREITA — objetos decorativos ─────────
-    g.fillStyle(0xd8e0e8);
-    g.fillRect(1143, this.floorY - ch + 5, 252, ch - 8);
-    g.lineStyle(1, 0xa8b4c0);
-    g.strokeRect(1145, this.floorY - ch + 7, 248, ch - 12);
-    g.fillStyle(0x7a9e6a, 0.9);
-    g.fillRect(1158, this.floorY - ch - 34, 16, 30);
-    g.fillRect(1180, this.floorY - ch - 30, 14, 26);
-    g.fillRect(1200, this.floorY - ch - 38, 15, 34);
-    g.fillStyle(0x788898);
-    g.fillRect(1240, this.floorY - ch - 42, 4, 38);
-    g.fillRect(1248, this.floorY - ch - 40, 4, 36);
-    g.fillRect(1256, this.floorY - ch - 44, 4, 40);
-    g.fillRect(1236, this.floorY - ch - 46, 30, 5);
+    // cano vertical
+    g.fillRect(tornX - 3, tornY - 30, 6, 24);
 
-    // ── ARMÁRIO ESCONDERIJO ───────────────────────────
-    const hideX = 1060;
+    // bico curvado (barra horizontal + ponta)
+    g.fillRect(tornX - 3, tornY - 30, 22, 6);
+    g.fillRect(tornX + 16, tornY - 30, 6, 14);
+
+    // alavanca
+    g.fillStyle(0x7a8a9a);
+    g.fillRect(tornX - 18, tornY - 28, 14, 4);
+
+    // ── MOLDURA DE PASSAGEM ───────────────────────────
+    const passX = 1080;
+    const passW = 250;
+    const pillarW = 18;
+
+    // pilares da moldura
     g.fillStyle(0xd8e0e8);
-    g.fillRect(hideX, this.floorY - ch - 120, 80, 120);
-    g.lineStyle(1, 0xa8b4c0);
-    g.strokeRect(hideX + 3, this.floorY - ch - 117, 74, 56);
-    g.strokeRect(hideX + 3, this.floorY - ch - 57, 74, 53);
-    g.fillStyle(0x9898a8);
-    g.fillRect(hideX + 28, this.floorY - ch - 92, 24, 5);
-    g.fillRect(hideX + 28, this.floorY - ch - 33, 24, 5);
-    const hideZone = this.add.zone(hideX + 40, this.floorY - ch - 60, 80, 120);
-    this.physics.add.existing(hideZone, true);
-    this.wardrobes.push(hideZone);
+    g.fillRect(passX, topMargin, pillarW, this.floorY - topMargin);
+    g.fillRect(passX + passW - pillarW, topMargin, pillarW, this.floorY - topMargin);
+
+    // viga superior
+    g.fillRect(passX, topMargin, passW, 20);
+
+    // detalhe interno — sombra da passagem
+    g.fillStyle(0x040c18, 0.4);
+    g.fillRect(passX + pillarW, topMargin + 20, passW - pillarW * 2, this.floorY - topMargin - 20);
+
+    // borda interna da moldura
+    g.lineStyle(2, 0xb8c4cc);
+    g.strokeRect(passX + 4, topMargin + 4, passW - 8, this.floorY - topMargin - 4);
+
+    // zona de passagem cozinha → jardim
+    this.passageZone = this.add.zone(passX + passW / 2, this.floorY - ch / 2, passW - pillarW * 2, this.floorY);
+    this.physics.add.existing(this.passageZone, true);
 
     // ── LUMINÁRIAS ────────────────────────────────────
     [240, 480, 720].forEach(x => {
@@ -1093,60 +1141,42 @@ class Phase2Scene extends BaseScene {
       g.fillStyle(0x8ab0cc, 0.05);
       g.fillTriangle(x - 60, topMargin + 26, x + 62, topMargin + 26, x + 1, this.floorY);
     });
-
-    // ── DETALHES ──────────────────────────────────────
-    g.fillStyle(0x5a7868);
-    g.fillRect(460, 260, 14, 18);
-    g.lineStyle(1, 0x4a6858);
-    g.strokeRect(462, 262, 10, 14);
-    g.fillStyle(0x5a7868);
-    g.fillRect(940, 260, 14, 18);
-    g.strokeRect(942, 262, 10, 14);
-    g.fillStyle(0x5a7868);
-    g.fillRect(840, 230, 70, 50);
-    g.fillStyle(0x6a8878, 0.5);
-    g.fillRect(845, 235, 60, 40);
-    g.lineStyle(2, 0x4a6858);
-    g.strokeRect(843, 233, 64, 44);
-
-    this.add.text(700, 12, 'COZINHA', {
-      fontSize: '9px', fontFamily: 'Courier New',
-      color: '#6a7a8a', letterSpacing: 3
-    }).setOrigin(0.5).setDepth(2);
   }
+
+  // ─── JARDIM + PISCINA ─────────────────────────────
   // ─── JARDIM + PISCINA ─────────────────────────────
   buildGardenPool() {
     const g = this.add.graphics().setDepth(1);
     const s = this.s;
-    const startX = 1400 * s;
+    const startX = 1400;
 
     // Céu noturno
     g.fillStyle(0x0a0f1a);
-    g.fillRect(startX, 0, 1400 * s, GAME_H);
+    g.fillRect(startX, 0, 1400, GAME_H);
 
     // Grama
     g.fillStyle(0x1a3a1a);
-    g.fillRect(startX, this.floorY, 1400 * s, 80 * s);
+    g.fillRect(startX, this.floorY, 1400, 80 * s);
     g.fillStyle(0x224422);
-    g.fillRect(startX, this.floorY, 1400 * s, 4 * s);
+    g.fillRect(startX, this.floorY, 1400, 4 * s);
 
-    // Física do chão jardim
-    const floor = this.add.rectangle(startX + 700 * s, this.floorY + 30 * s, 1400 * s, 60 * s).setVisible(false);
+    // Física do chão jardim — cobre desde o início do jardim
+    const floor = this.add.rectangle(startX + 700, this.floorY + 30, 1400 * 2, 60).setVisible(false);
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
     // Lua
     g.fillStyle(0xfffde0, 0.9);
-    g.fillCircle(startX + 200 * s, 60 * s, 35 * s);
+    g.fillCircle(startX + 200, 60, 35);
     g.fillStyle(0xf5f0cc, 0.15);
-    g.fillCircle(startX + 200 * s, 60 * s, 55 * s);
+    g.fillCircle(startX + 200, 60, 55);
 
     // Estrelas
     for (let i = 0; i < 40; i++) {
-      const sx = startX + Phaser.Math.Between(0, 1400) * s;
-      const sy = Phaser.Math.Between(0, 200) * s;
+      const sx = startX + Phaser.Math.Between(0, 1400);
+      const sy = Phaser.Math.Between(0, 200);
       g.fillStyle(0xffffff, Math.random() * 0.8 + 0.2);
-      g.fillCircle(sx, sy, Phaser.Math.Between(1, 2) * s);
+      g.fillCircle(sx, sy, Phaser.Math.Between(1, 2));
     }
 
     // Árvores e arbustos — Jeremiah pode sair de trás
@@ -1160,25 +1190,25 @@ class Phase2Scene extends BaseScene {
     trees.forEach(t => {
       // Tronco
       g.fillStyle(0x3a2a1a);
-      g.fillRect(startX + t.x * s + (t.w * s / 2) - 8 * s, this.floorY - t.h * s, 16 * s, t.h * s);
+      g.fillRect(startX + t.x + (t.w / 2) - 8, this.floorY - t.h, 16, t.h);
       // Copa em camadas
       g.fillStyle(0x0d2a0d);
       g.fillTriangle(
-        startX + t.x * s, this.floorY - t.h * s * 0.5,
-        startX + t.x * s + t.w * s, this.floorY - t.h * s * 0.5,
-        startX + t.x * s + (t.w * s / 2), this.floorY - t.h * s
+        startX + t.x, this.floorY - t.h * 0.5,
+        startX + t.x + t.w, this.floorY - t.h * 0.5,
+        startX + t.x + (t.w / 2), this.floorY - t.h
       );
       g.fillStyle(0x102e10);
       g.fillTriangle(
-        startX + t.x * s + 5 * s, this.floorY - t.h * s * 0.3,
-        startX + t.x * s + t.w * s - 5 * s, this.floorY - t.h * s * 0.3,
-        startX + t.x * s + (t.w * s / 2), this.floorY - t.h * s * 0.8
+        startX + t.x + 5, this.floorY - t.h * 0.3,
+        startX + t.x + t.w - 5, this.floorY - t.h * 0.3,
+        startX + t.x + (t.w / 2), this.floorY - t.h * 0.8
       );
       g.fillStyle(0x143414);
       g.fillTriangle(
-        startX + t.x * s + 10 * s, this.floorY - t.h * s * 0.1,
-        startX + t.x * s + t.w * s - 10 * s, this.floorY - t.h * s * 0.1,
-        startX + t.x * s + (t.w * s / 2), this.floorY - t.h * s * 0.6
+        startX + t.x + 10, this.floorY - t.h * 0.1,
+        startX + t.x + t.w - 10, this.floorY - t.h * 0.1,
+        startX + t.x + (t.w / 2), this.floorY - t.h * 0.6
       );
     });
 
@@ -1191,49 +1221,49 @@ class Phase2Scene extends BaseScene {
 
     bushes.forEach(b => {
       g.fillStyle(0x0d2a0d);
-      g.fillEllipse(startX + b.x * s + (b.w * s / 2), this.floorY - 25 * s, b.w * s, 50 * s);
+      g.fillEllipse(startX + b.x + (b.w / 2), this.floorY - 25, b.w, 50);
       g.fillStyle(0x102e10);
-      g.fillEllipse(startX + b.x * s + (b.w * s / 2) - 15 * s, this.floorY - 30 * s, b.w * s * 0.6, 40 * s);
+      g.fillEllipse(startX + b.x + (b.w / 2) - 15, this.floorY - 30, b.w * 0.6, 40);
       g.fillStyle(0x143414);
-      g.fillEllipse(startX + b.x * s + (b.w * s / 2) + 10 * s, this.floorY - 28 * s, b.w * s * 0.5, 35 * s);
+      g.fillEllipse(startX + b.x + (b.w / 2) + 10, this.floorY - 28, b.w * 0.5, 35);
 
-      const zone = this.add.zone(startX + b.x * s + (b.w * s / 2), this.floorY - 25 * s, b.w * s, 50 * s);
+      const zone = this.add.zone(startX + b.x + (b.w / 2), this.floorY - 25, b.w, 50);
       this.physics.add.existing(zone, true);
       this.wardrobes.push(zone);
     });
 
     // Muro com plataforma para escapar
     g.fillStyle(0xd4c8b0);
-    g.fillRect(startX + 500 * s, this.floorY - 120 * s, 200 * s, 20 * s);
-    g.fillRect(startX + 500 * s, this.floorY - 120 * s, 200 * s, 4 * s);
-    const muro = this.add.rectangle(startX + 600 * s, this.floorY - 110 * s, 200 * s, 20 * s).setVisible(false);
+    g.fillRect(startX + 500, this.floorY - 120, 200, 20);
+    g.fillRect(startX + 500, this.floorY - 120, 200, 4);
+    const muro = this.add.rectangle(startX + 600, this.floorY - 110, 200, 20).setVisible(false);
     this.physics.add.existing(muro, true);
     this.platforms.add(muro);
 
     g.fillStyle(0xd4c8b0);
-    g.fillRect(startX + 900 * s, this.floorY - 150 * s, 180 * s, 20 * s);
-    const muro2 = this.add.rectangle(startX + 990 * s, this.floorY - 140 * s, 180 * s, 20 * s).setVisible(false);
+    g.fillRect(startX + 900, this.floorY - 150, 180, 20);
+    const muro2 = this.add.rectangle(startX + 990, this.floorY - 140, 180, 20).setVisible(false);
     this.physics.add.existing(muro2, true);
     this.platforms.add(muro2);
 
     // Piscina
-    const poolX = startX + 800 * s;
-    const poolW = 500 * s;
-    const poolY = this.floorY - 60 * s;
-    const poolH = 60 * s;
+    const poolX = startX + 800;
+    const poolW = 500;
+    const poolY = this.floorY - 60;
+    const poolH = 60;
 
     g.fillStyle(0x1a5f8a);
     g.fillRect(poolX, poolY, poolW, poolH);
     // Brilho da piscina
     g.fillStyle(0x2288cc, 0.3);
-    g.fillRect(poolX, poolY, poolW, 8 * s);
+    g.fillRect(poolX, poolY, poolW, 8);
     g.fillStyle(0x44aaff, 0.15);
-    g.fillRect(poolX + 20 * s, poolY + 15 * s, poolW - 40 * s, 4 * s);
-    g.fillRect(poolX + 40 * s, poolY + 30 * s, poolW - 80 * s, 3 * s);
+    g.fillRect(poolX + 20, poolY + 15, poolW - 40, 4);
+    g.fillRect(poolX + 40, poolY + 30, poolW - 80, 3);
     // Borda da piscina
     g.fillStyle(0xe8e0d0);
-    g.fillRect(poolX - 10 * s, poolY - 8 * s, poolW + 20 * s, 10 * s);
-    g.fillRect(poolX - 10 * s, poolY + poolH, poolW + 20 * s, 10 * s);
+    g.fillRect(poolX - 10, poolY - 8, poolW + 20, 10);
+    g.fillRect(poolX - 10, poolY + poolH, poolW + 20, 10);
 
     // Luz azul animada da piscina
     const poolGlow = this.add.rectangle(poolX + poolW / 2, poolY + poolH / 2, poolW, poolH, 0x1188ee, 0.12).setDepth(2);
@@ -1250,9 +1280,34 @@ class Phase2Scene extends BaseScene {
     this.physics.add.existing(this.poolZone, true);
 
     // Física da borda da piscina (player anda em cima)
-    const poolEdge = this.add.rectangle(poolX + poolW / 2, poolY - 4 * s, poolW, 8 * s).setVisible(false);
+    const poolEdge = this.add.rectangle(poolX + poolW / 2, poolY - 4, poolW, 8).setVisible(false);
     this.physics.add.existing(poolEdge, true);
     this.platforms.add(poolEdge);
+
+    // zona de retorno jardim → cozinha
+    this.returnZone = this.add.zone(1420, this.floorY - 50, 40, 200);
+    this.physics.add.existing(this.returnZone, true);
+  }
+
+  // ─── JEREMIAH ─────────────────────────────────────
+  createJeremiah() {
+    // spawn no jardim sem escala
+    this.jeremiah = this.physics.add.sprite(1800, this.floorY - 60)
+      .setVisible(false)
+      .setCollideWorldBounds(true);
+
+    this.jeremiah.body.setSize(30 * this.s, 60 * this.s);
+    this.jeremiah.body.setGravityY(400);
+    this.jeremiahGfx = this.add.graphics().setDepth(6);
+
+    this.hibells = this.add.text(0, 0, '"Oi, Bells..."', {
+      fontSize: `${13 * this.s}px`,
+      fontFamily: 'Courier New',
+      color: '#aaffaa',
+      letterSpacing: 1 * this.s,
+      backgroundColor: '#0a1a0a',
+      padding: { x: 6 * this.s, y: 4 * this.s }
+    }).setOrigin(0.5).setAlpha(0).setDepth(10);
   }
 
   // ─── PIER ─────────────────────────────────────────
@@ -1340,7 +1395,8 @@ class Phase2Scene extends BaseScene {
 
   setupWorld() {
     this.physics.world.setBounds(0, 0, this.worldWidth, GAME_H);
-    this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_H);
+    // câmera começa restrita à cozinha — impede de ver o jardim antes da transição
+    this.cameras.main.setBounds(0, 0, 1400, GAME_H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
   }
 
@@ -1437,24 +1493,79 @@ class Phase2Scene extends BaseScene {
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, d.zone.x, d.zone.y);
       if (dist < 70 * this.s) {
         d.searched = true;
+
+        this.sound.play('som_gaveta', { volume: 1.2 });
+        const x = d.zone.x - 42; // x base da gaveta
+        const ch = 75;
+
+        // redesenha a gaveta aberta — empurra o painel para baixo
+        const dg = this.add.graphics().setDepth(3);
+
+        // fundo da gaveta aberta (interior escuro)
+        dg.fillStyle(0x888898);
+        dg.fillRect(x + 2, this.floorY - ch + 5, 81, (ch - 10) / 2);
+
+        // painel superior puxado para baixo (sobrepõe o interior)
+        dg.fillStyle(0xd8e0e8);
+        dg.fillRect(x + 2, this.floorY - ch + 22, 81, (ch - 10) / 2);
+
+        // painel inferior igual — não mexe
+        dg.fillStyle(0xb8c4cc);
+        dg.fillRect(x + 2, this.floorY - ch + 7 + (ch - 10) / 2, 81, (ch - 12) / 2);
+
+        // bordas
+        dg.lineStyle(1, 0xa8b4c0);
+        dg.strokeRect(x + 2, this.floorY - ch + 22, 81, (ch - 10) / 2);
+        dg.strokeRect(x + 2, this.floorY - ch + 7 + (ch - 10) / 2, 81, (ch - 12) / 2);
+
+        // puxador deslocado junto com o painel
+        dg.fillStyle(0x9898a8);
+        dg.fillRect(x + 26, this.floorY - ch + 35, 34, 4);
+        dg.fillRect(x + 26, this.floorY - ch + 38, 34, 4);
+
         if (d.hasKey) {
-          this.keyFound = true;
-          const msg = this.add.text(GAME_W / 2, GAME_H / 2 - 20, TEXTS.KEY_FOUND, {
-            fontSize: `${13 * this.s}px`,
-            fontFamily: 'Courier New',
-            color: '#ffdd44',
-            letterSpacing: 2 * this.s
-          }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
-          this.tweens.add({ targets: msg, alpha: 0, duration: 800, delay: 2000, onComplete: () => msg.destroy() });
-        } else {
-          const msg = this.add.text(GAME_W / 2, GAME_H / 2 - 20, 'Vazio...', {
-            fontSize: `${13 * this.s}px`,
-            fontFamily: 'Courier New',
-            color: '#888888',
-            letterSpacing: 2 * this.s
-          }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
-          this.tweens.add({ targets: msg, alpha: 0, duration: 600, delay: 1000, onComplete: () => msg.destroy() });
+          this.keyFound = false;
+
+          // desenha a chave dentro da gaveta aberta
+          const keyX = d.zone.x;
+          const keyY = this.floorY - ch + 16; // dentro do interior visível
+
+          const kg = this.add.graphics().setDepth(4);
+
+          // cabeça da chave
+          kg.fillStyle(0xffdd44, 0.9);
+          kg.fillCircle(keyX, keyY, 8);
+          kg.fillStyle(0xffaa00);
+          kg.fillCircle(keyX, keyY, 5);
+
+          // cabo e dentes
+          kg.fillRect(keyX + 2, keyY, 18, 4);
+          kg.fillRect(keyX + 14, keyY + 4, 4, 4);
+          kg.fillRect(keyX + 18, keyY + 4, 4, 4);
+
+          // brilho pulsante
+          const glow = this.add.rectangle(keyX, keyY, 24, 24, 0xffdd44, 0.06).setDepth(3);
+          this.tweens.add({
+            targets: glow,
+            alpha: { from: 0.02, to: 0.1 },
+            duration: 800,
+            yoyo: true,
+            repeat: -1
+          });
+
+          // zona de coleta
+          this.keyZone = this.add.zone(keyX, keyY, 24, 24).setDepth(4);
+          this.physics.add.existing(this.keyZone, true);
+          this.keyZone.body.setSize(24, 24);
+
+          // guarda referências para o collectKey() do BaseScene
+          this.keyGfx = kg;
+          this.keyGlow = glow;
+
+          // coleta ao tocar
+          this.physics.add.overlap(this.player, this.keyZone, () => this.collectKey());
         }
+
         return;
       }
     }
@@ -1495,13 +1606,14 @@ class Phase2Scene extends BaseScene {
 
     // Gavetas
     this.checkDrawers();
+
   }
 
   update() {
     super.update();
     if (this.transitioning) return;
 
-    // Jeremiah patrulha só no jardim/piscina (x: 1400-2800 em escala original)
+    // Jeremiah patrulha só no jardim/piscina
     if (!this.inWardrobe && !this.inBush && !this.inPool) {
       this.jeremiah.body.setVelocityX(this.jeremiahSpeed * this.jeremiahDir);
       if (this.jeremiah.x > 2700 * this.s || this.jeremiah.x < 1450 * this.s) {
@@ -1514,6 +1626,49 @@ class Phase2Scene extends BaseScene {
 
     this.drawJeremiah();
     this.checkJeremiah();
+
+    // passagem cozinha → jardim
+    if (!this.passingThrough && this.passageZone && this.isNear(this.passageZone)) {
+      this.passingThrough = true;
+      this.player.body.setVelocity(0, 0);
+      this.player.body.setAllowGravity(false);
+      this.cameras.main.stopFollow(); // para a câmera antes do fade — impede de ver o jardim
+      this.cameras.main.fade(500, 0, 0, 0);
+
+      this.time.delayedCall(1500, () => {
+        this.player.setPosition(1400 + 200, this.floorY - 50 * this.s);
+        this.player.body.setAllowGravity(true);
+        // câmera agora cobre só o jardim e pier
+        this.cameras.main.setBounds(1400, 0, this.worldWidth - 1400, GAME_H);
+        this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+        this.cameras.main.fadeIn(500, 0, 0, 0);
+        this.time.delayedCall(600, () => { this.passingThrough = false; });
+      });
+    }
+
+    // retorno jardim → cozinha
+    this.passageZone.active = false;
+    if (!this.passingThrough && this.returnZone && this.isNear(this.returnZone)) {
+      this.passingThrough = true;
+      this.player.body.setVelocity(0, 0);
+      this.player.body.setAllowGravity(false);
+      this.cameras.main.stopFollow(); // para a câmera antes do fade — impede de ver a cozinha
+      this.cameras.main.fade(500, 0, 0, 0);
+
+      this.time.delayedCall(1500, () => {
+        this.player.setPosition(800, this.floorY - 50 * this.s);
+        this.player.body.setAllowGravity(true);
+        // câmera volta para a cozinha
+        this.cameras.main.setBounds(0, 0, 1400, GAME_H);
+        this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+        this.cameras.main.fadeIn(500, 0, 0, 0);
+        this.time.delayedCall(600, () => {
+          this.passingThrough = false;
+          this.passageZone.active = true; // reativa só depois
+        });
+        this.time.delayedCall(600, () => { this.passingThrough = false; });
+      });
+    }
 
     // Prompts
     let nearWardrobe = this.wardrobes.some(w => this.isNear(w));
@@ -2453,12 +2608,12 @@ class Phase4Scene extends BaseScene {
 }
 
 // =============================================
-//  CENA: FASE 5 - ARENA (COM DECORAÇÕES)
+//  CENA: FASE 5 - ACADEMIA ESCURA  (v5)
 // =============================================
 class Phase5Scene extends BaseScene {
   constructor() {
     super('Phase5Scene');
-    this.worldWidth = 1800;
+    this.worldWidth = Math.round(GAME_W * 3.5); // fase bem mais longa
   }
 
   create() {
@@ -2467,459 +2622,517 @@ class Phase5Scene extends BaseScene {
     GameState.updateUI();
     this.showPhaseTitle(TEXTS.PHASE_5);
 
-    // Configurações específicas
-    this.inHiding = false;
-    this.hitCooldown = false;
-    this.mariaCooldown = false;
-    this.hideXs = [119, 869, 1669];
-    this.mariaTriggerXs = [450, 1200];
-    this.mariaTriggered = [false, false];
+    // ── ESTADO ─────────────────────────────────────────────
+    this.keyFound          = false;
+    this.screechDerrotado  = false;
+    this.portaAberta       = false;
+    this.tempoPassado      = 0;
+    this.tempoLimite       = 30000; // 1º ataque em 30s
+    this.cicloAtaque       = 0;     // conta quantos ataques já ocorreram
+    this.punicaoAplicada   = false;
+    this.bauAberto         = false;
+    this.screechAtacando   = false;
 
+    // ── CENÁRIO ────────────────────────────────────────────
     this.platforms = this.physics.add.staticGroup();
-    this.enemies = [];
-    this.hideZones = [];
+    this.buildAcademia();
 
-    this.buildLevel();
-    this.createEnemies();
-    this.createHideSpots();
-    this.createExitDoor();
-    this.createTorches();
-    this.createBanners();
+    // ── BAÚ ────────────────────────────────────────────────
+    this.criarBau();
 
+    // ── SCREECH ────────────────────────────────────────────
+    this.screechObj = this.criarScreech();
+
+    // ── ESCURIDÃO COM GEOMETRYMASK ─────────────────────────
+    this.escuridaoRect = this.add.graphics()
+      .setDepth(20).setScrollFactor(0);
+    this.escuridaoRect.fillStyle(0x000000, 0.97);
+    this.escuridaoRect.fillRect(0, 0, GAME_W, GAME_H);
+
+    // lantGfx recebe DOIS círculos: mouse + player
+    this.lantGfx  = this.add.graphics().setScrollFactor(0).setDepth(0);
+    this.lantMask = this.lantGfx.createGeometryMask();
+    this.lantMask.setInvertAlpha(true);
+    this.escuridaoRect.setMask(this.lantMask);
+
+    // ── AVISO ──────────────────────────────────────────────
+    this.textoAviso = this.add.text(GAME_W / 2, GAME_H - 40, '', {
+      fontSize: '15px', fill: '#ffdd44', align: 'center',
+      backgroundColor: '#000000', padding: { x: 8, y: 4 }
+    }).setOrigin(0.5).setDepth(55).setScrollFactor(0);
+
+    // ── COLISÕES ───────────────────────────────────────────
     this.physics.add.collider(this.player, this.platforms);
-    this.physics.add.collider(this.enemies, this.platforms);
+    this.physics.add.overlap(this.player, this.bauZone, () => this.abrirBau(), null, this);
 
-    this.mariaGfx = this.add.graphics().setDepth(15);
+    // ── PSST após 7s ───────────────────────────────────────
+    this.time.delayedCall(7000, () => {
+      try { this.sound.play('psst', { volume: 1.0 }); } catch(e) {}
+    });
   }
 
-  buildLevel() {
-    const g = this.add.graphics();
+  // ── CENÁRIO DA ACADEMIA ───────────────────────────────────
+  buildAcademia() {
+    const g  = this.add.graphics().setDepth(1);
+    const W  = this.worldWidth;
+    const fy = this.floorY;
 
     // Fundo
-    g.fillStyle(0x050510);
-    g.fillRect(0, 0, this.worldWidth, GAME_H);
+    g.fillStyle(0x050508);
+    g.fillRect(0, 0, W, GAME_H);
 
-    // Chão xadrez
-    for (let x = 0; x < this.worldWidth; x += 50) {
-      for (let y = this.floorY; y < GAME_H; y += 50) {
-        g.fillStyle(((x + y) / 50) % 2 === 0 ? 0x0d0d20 : 0x0a0a18);
-        g.fillRect(x, y, 50, 50);
-      }
+    // Chão
+    for (let x = 0; x < W; x += 40) {
+      g.fillStyle(x % 80 === 0 ? 0x0e0e14 : 0x0b0b10);
+      g.fillRect(x, fy, 40, 60);
     }
+    g.fillStyle(0x1a1a28);
+    g.fillRect(0, fy, W, 3);
+
+    // Teto
+    g.fillStyle(0x080810);
+    g.fillRect(0, 0, W, 28);
+    g.fillStyle(0x111118);
+    g.fillRect(0, 28, W, 4);
 
     // Física do chão
-    const floor = this.add.rectangle(this.worldWidth / 2, this.floorY + 30, this.worldWidth, 60)
-      .setVisible(false);
+    const floor = this.add.rectangle(W / 2, fy + 30, W, 60).setVisible(false);
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
-    // Plataformas em estilo torre
-    const platforms = [
-      { x: 80, y: 200, w: 100, tower: true }, { x: 300, y: 300, w: 120 }, { x: 550, y: 240, w: 100 },
-      { x: 750, y: 310, w: 130 }, { x: 980, y: 260, w: 110 }, { x: 1200, y: 290, w: 120 },
-      { x: 1430, y: 240, w: 100 }, { x: 1650, y: 200, w: 100, tower: true }
-    ];
+    // Esteiras (mais espalhadas)
+    [120, 480, 900, 1380, 1820, 2300, 2750].forEach(x => this._esteira(g, x, fy));
 
-    platforms.forEach(p => {
-      if (p.tower) {
-        // Estrutura de torre
-        g.fillStyle(0x1a1a3a);
-        g.fillRect(p.x, p.y, p.w, GAME_H - 60 - p.y);
-        g.fillStyle(0x2a2a5a);
-        g.fillRect(p.x, p.y, p.w, 16);
+    // Halteres
+    [300, 660, 1050, 1530, 1980, 2450, 2900].forEach(x => this._halteres(g, x, fy));
 
-        // Ameias
-        for (let bx = p.x; bx < p.x + p.w; bx += 16) {
-          g.fillStyle(0x3a3a6a);
-          g.fillRect(bx, p.y - 12, 10, 12);
-        }
-      } else {
-        g.fillStyle(0x161630);
-        g.fillRect(p.x, p.y, p.w, 16);
-        g.fillStyle(0x2a2a55, 0.8);
-        g.fillRect(p.x, p.y, p.w, 3);
-      }
+    // Espelhos
+    [60, 340, 700, 1100, 1560, 2000, 2460, 2880, 3200].forEach(x => this._espelho(g, x, fy));
 
-      const plat = this.add.rectangle(p.x + p.w / 2, p.y + 8, p.w, 16).setVisible(false);
+    // Bancos como plataformas (mais deles, mais distribuídos)
+    [
+      { x: 200,  y: fy - 60,  w: 100 },
+      { x: 520,  y: fy - 80,  w: 120 },
+      { x: 820,  y: fy - 55,  w: 100 },
+      { x: 1150, y: fy - 75,  w: 110 },
+      { x: 1460, y: fy - 60,  w: 100 },
+      { x: 1750, y: fy - 80,  w: 120 },
+      { x: 2080, y: fy - 60,  w: 100 },
+      { x: 2380, y: fy - 75,  w: 110 },
+      { x: 2700, y: fy - 55,  w: 100 },
+      { x: 3000, y: fy - 70,  w: 120 },
+    ].forEach(b => {
+      g.fillStyle(0x1a1228);
+      g.fillRect(b.x, b.y, b.w, 18);
+      g.fillStyle(0x2a1a3a);
+      g.fillRect(b.x, b.y, b.w, 4);
+      g.fillStyle(0x111118);
+      g.fillRect(b.x + 8,        b.y + 18, 10, 42);
+      g.fillRect(b.x + b.w - 18, b.y + 18, 10, 42);
+      const plat = this.add.rectangle(b.x + b.w / 2, b.y + 9, b.w, 18).setVisible(false);
       this.physics.add.existing(plat, true);
       this.platforms.add(plat);
     });
-  }
 
-  createTorches() {
-    const g = this.add.graphics();
-    const positions = [80, 350, 650, 950, 1250, 1550, 1750];
-
-    positions.forEach(x => {
-      // Tochas azuis/roxas (estilo arena)
-      g.fillStyle(0x221155, 0.8);
-      g.fillRect(x - 2, this.floorY - 130, 4, 25);
-      g.fillStyle(0x6633ff, 0.8);
-      g.fillCircle(x, this.floorY - 138, 6);
-
-      const glow = this.add.rectangle(x, this.floorY - 138, 26, 26, 0x6633ff, 0.07);
-      this.tweens.add({
-        targets: glow,
-        alpha: { from: 0.03, to: 0.13 },
-        duration: 600,
-        yoyo: true,
-        repeat: -1
-      });
-    });
-  }
-
-  createBanners() {
-    const g = this.add.graphics();
-    const positions = [200, 600, 1000, 1400];
-
-    positions.forEach(x => {
-      // Bandeira
-      g.fillStyle(0x2200aa, 0.6);
-      g.fillRect(x, 30, 40, 60);
-      g.fillStyle(0x4400cc, 0.4);
-      g.fillRect(x + 5, 35, 30, 50);
-
-      // Símbolo de coroa
-      g.fillStyle(0xffdd00, 0.6);
-      g.fillTriangle(x + 8, 55, x + 14, 40, x + 20, 55);
-      g.fillTriangle(x + 16, 55, x + 20, 40, x + 26, 55);
-      g.fillTriangle(x + 22, 55, x + 28, 42, x + 34, 55);
-    });
-  }
-
-  createHideSpots() {
-    const g = this.add.graphics().setDepth(2);
-
-    this.hideXs.forEach(cx => {
-      const x = cx - 19;
-      g.fillStyle(0x1a1a2a);
-      g.fillRect(x, this.floorY - 85, 38, 85);
-      g.lineStyle(1, 0x334466, 0.9);
-      g.strokeRect(x, this.floorY - 85, 38, 85);
-
-      // Maçaneta
-      g.fillStyle(0x223355, 0.6);
-      g.fillRect(x + 17, this.floorY - 46, 4, 18);
-
-      this.add.text(cx, this.floorY - 98, 'ESCONDER', {
-        fontSize: '8px',
-        fontFamily: 'Courier New',
-        color: '#4466aa',
-        letterSpacing: 1
-      }).setOrigin(0.5);
-
-      const zone = this.add.zone(cx, this.floorY - 42, 50, 80);
-      this.physics.add.existing(zone, true);
-      this.hideZones.push(zone);
-    });
-  }
-
-  createEnemies() {
-    this.enemyGfx = this.add.graphics().setDepth(4);
-
-    const enemyTypes = ['knight', 'giant', 'archer'];
-    const positions = [300, 600, 900, 1200, 1500];
-
-    this.enemyList = positions.map((x, i) => ({
-      x: x,
-      y: this.floorY - 40,
-      type: enemyTypes[i % 3],
-      dir: Math.random() > 0.5 ? 1 : -1,
-      speed: 60,
-      hp: i % 3 === 1 ? 2 : 1 // giant tem 2 de vida
-    }));
-  }
-
-  drawEnemies() {
-    const g = this.enemyGfx;
-    g.clear();
-
-    this.enemyList.forEach(e => {
-      // Move inimigo
-      e.x += e.speed * e.dir * 0.016;
-
-      if (e.x > this.worldWidth - 50 || e.x < 50) {
-        e.dir *= -1;
-      }
-
-      const flip = e.dir < 0 ? -1 : 1;
-      const x = e.x;
-      const y = e.y;
-
-      if (e.type === 'knight') {
-        // Cavaleiro
-        g.fillStyle(0x888899);
-        g.fillRect(x - 11, y - 38, 22, 28);
-        g.fillStyle(0xaaaacc);
-        g.fillRect(x - 10, y - 58, 20, 20);
-        g.fillStyle(0x666677);
-        g.fillRect(x - 10, y - 62, 20, 8); // elmo
-        g.fillStyle(0xccccee, 0.9);
-        g.fillRect(x - 3 * flip, y - 55, 6, 8); // viseira
-        g.fillStyle(0x444455);
-        g.fillRect(x - 9, y - 10, 8, 12);
-        g.fillRect(x + 1, y - 10, 8, 12);
-        g.fillStyle(0x999aaa);
-        g.fillRect(x + 9 * flip, y - 38, 8, 22); // escudo
-      } else if (e.type === 'giant') {
-        // Gigante
-        g.fillStyle(0x556644);
-        g.fillRect(x - 14, y - 40, 28, 34);
-        g.fillStyle(0x667755);
-        g.fillRect(x - 12, y - 62, 24, 22);
-        g.fillStyle(0x223322);
-        g.fillRect(x - 12, y - 65, 24, 8);
-        g.fillStyle(0x445533);
-        g.fillRect(x - 11, y - 10, 10, 14);
-        g.fillRect(x + 1, y - 10, 10, 14);
-        g.fillStyle(0x334422);
-        g.fillRect(x - 18, y - 38, 6, 25);
-        g.fillRect(x + 12, y - 38, 6, 25);
-      } else {
-        // Arqueiro
-        g.fillStyle(0x885533);
-        g.fillRect(x - 9, y - 38, 18, 28);
-        g.fillStyle(0x996644);
-        g.fillRect(x - 8, y - 58, 16, 20);
-        g.fillStyle(0x553322);
-        g.fillRect(x - 8, y - 62, 16, 8);
-        g.fillStyle(0x775522);
-        g.fillRect(x - 8, y - 10, 7, 12);
-        g.fillRect(x + 1, y - 10, 7, 12);
-
-        // Arco
-        g.lineStyle(2, 0x664411, 0.9);
-        g.beginPath();
-        g.arc(x + 10 * flip, y - 30, 16, Math.PI * 0.3, Math.PI * 1.7);
-        g.strokePath();
-        g.lineStyle(1, 0xccaa77, 0.7);
-        g.beginPath();
-        g.moveTo(x + 10 * flip, y - 44);
-        g.lineTo(x + 10 * flip, y - 16);
-        g.strokePath();
-      }
-    });
-  }
-
-  checkEnemyCollision() {
-    if (this.hitCooldown || this.inHiding) return;
-
-    for (let e of this.enemyList) {
-      const dist = Phaser.Math.Distance.Between(
-        this.player.x, this.player.y,
-        e.x, e.y
-      );
-
-      if (dist < 40) {
-        this.hitCooldown = true;
-
-        if (GameState.damage(1)) {
-          this.transitionTo('GameOverScene');
-          return;
-        }
-
-        // Repulsão
-        const dir = this.player.x < e.x ? -1 : 1;
-        this.player.body.setVelocityX(dir * 300);
-        this.player.body.setVelocityY(-200);
-
-        // Flash vermelho
-        const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff2200, 0.3)
-          .setScrollFactor(0).setDepth(25);
-        this.tweens.add({
-          targets: flash,
-          alpha: 0,
-          duration: 400,
-          onComplete: () => flash.destroy()
-        });
-
-        this.time.delayedCall(1200, () => {
-          this.hitCooldown = false;
-        });
-
-        break;
-      }
+    // Barras no teto (onde screech anda)
+    for (let x = 150; x < W - 100; x += 320) {
+      g.fillStyle(0x1a1a22);
+      g.fillRect(x, 28, 160, 8);
+      g.fillStyle(0x2a2a38);
+      g.fillRect(x, 28, 160, 2);
     }
-  }
 
-  createExitDoor() {
-    const dx = 1700, dw = 55, dh = 95, dy = this.floorY - dh;
+    // Porta (oculta até abrir)
+    this.portaGfx = this.add.graphics().setDepth(2);
+    const px = W - 80, dw = 55, dh = 95, dy = fy - dh;
+    this.portaGfx.fillStyle(COLORS.doorFrame);
+    this.portaGfx.fillRect(px - 4, dy - 6, dw + 8, dh + 8);
+    this.portaGfx.fillStyle(COLORS.door);
+    this.portaGfx.fillRect(px, dy, dw, dh);
+    this.portaGfx.lineStyle(1, COLORS.highlight, 0.3);
+    this.portaGfx.strokeRect(px + 5, dy + 5, dw - 10, (dh - 15) / 2);
+    this.portaGfx.fillStyle(COLORS.doorGlow);
+    this.portaGfx.fillCircle(px + dw - 10, dy + dh / 2, 4);
+    this.portaGfx.setAlpha(0);
 
-    const g = this.add.graphics().setDepth(2);
-    g.fillStyle(COLORS.doorFrame);
-    g.fillRect(dx - 4, dy - 6, dw + 8, dh + 8);
-    g.fillStyle(COLORS.door);
-    g.fillRect(dx, dy, dw, dh);
-    g.fillStyle(COLORS.doorGlow);
-    g.fillCircle(dx + dw - 10, dy + dh / 2, 4);
+    this.textPorta = this.add.text(W - 55, fy - 115, '005', {
+      fontSize: '13px', fontFamily: 'Courier New',
+      color: '#bb99ff', letterSpacing: 2
+    }).setOrigin(0.5).setDepth(3).setAlpha(0);
 
-    // Brilho animado
-    const glow = this.add.rectangle(dx + dw / 2, dy + dh / 2, dw + 20, dh + 20, COLORS.doorGlow, 0.06);
-    this.tweens.add({
-      targets: glow,
-      alpha: { from: 0.03, to: 0.10 },
-      duration: 1200,
-      yoyo: true,
-      repeat: -1
-    });
-
-    this.add.text(dx + dw / 2, dy - 18, '005', {
-      fontSize: '14px',
-      fontFamily: 'Courier New',
-      color: '#bb99ff',
-      letterSpacing: 2
-    }).setOrigin(0.5);
-
-    this.exitZone = this.add.zone(dx + dw / 2, dy + dh / 2, dw, dh);
+    this.exitZone = this.add.zone(W - 55, fy - 48, 55, 95);
     this.physics.add.existing(this.exitZone, true);
   }
 
-  triggerMaria() {
-    if (this.mariaCooldown || this.inHiding) return;
+  _esteira(g, x, fy) {
+    g.fillStyle(0x111118);
+    g.fillRect(x, fy - 55, 120, 55);
+    g.fillStyle(0x1a1a28);
+    g.fillRect(x + 8, fy - 48, 104, 38);
+    g.fillStyle(0x222230);
+    g.fillRect(x + 8, fy - 22, 104, 4);
+    g.fillStyle(0x333344);
+    g.fillRect(x + 90, fy - 52, 22, 30);
+    g.fillStyle(0x1155aa, 0.6);
+    g.fillRect(x + 94, fy - 49, 14, 6);
+  }
 
-    this.mariaCooldown = true;
+  _halteres(g, x, fy) {
+    g.fillStyle(0x222233);
+    g.fillRect(x,      fy - 18, 12, 18);
+    g.fillRect(x + 24, fy - 18, 12, 18);
+    g.fillRect(x + 12, fy - 14, 12, 10);
+    g.fillStyle(0x333344);
+    g.fillRect(x,      fy - 18, 12, 4);
+    g.fillRect(x + 24, fy - 18, 12, 4);
+  }
 
-    // Desenha Maria (versão roxa/glitch)
-    const g = this.mariaGfx;
-    g.clear();
-    g.setAlpha(1);
+  _espelho(g, x, fy) {
+    g.fillStyle(0x0d1520, 0.8);
+    g.fillRect(x, fy - 220, 60, 180);
+    g.lineStyle(2, 0x2233aa, 0.5);
+    g.strokeRect(x, fy - 220, 60, 180);
+  }
 
-    const mx = this.player.x + 80;
-    const my = this.floorY - 60;
+  // ── BAÚ DOURADO ───────────────────────────────────────────
+  // Posicionado a ~40% do mapa — acessível mas exige exploração
+  criarBau() {
+    const bx = Math.round(this.worldWidth * 0.40);
+    const by = this.floorY - 52;
+    const fy = this.floorY;
 
-    g.fillStyle(0xff00ff, 0.25);
-    g.fillCircle(mx, my - 40, 55);
-    g.fillStyle(0xff44ff, 0.15);
-    g.fillCircle(mx, my - 40, 70);
-    g.fillStyle(0xcc44cc);
-    g.fillRect(mx - 13, my - 55, 26, 36);
-    g.fillRect(mx - 10, my - 78, 20, 24);
-    g.fillStyle(0x330033);
-    g.fillRect(mx - 12, my - 86, 24, 12);
-    g.fillStyle(0xffffff);
-    g.fillCircle(mx - 5, my - 68, 8);
-    g.fillCircle(mx + 5, my - 68, 8);
-    g.fillStyle(0xaa00aa);
-    g.fillCircle(mx - 5, my - 68, 5);
-    g.fillCircle(mx + 5, my - 68, 5);
-    g.fillStyle(0x000000);
-    g.fillCircle(mx - 5, my - 68, 2);
-    g.fillCircle(mx + 5, my - 68, 2);
-    g.fillStyle(0x993399);
-    g.fillRect(mx - 10, my - 19, 9, 20);
-    g.fillRect(mx + 1, my - 19, 9, 20);
+    const g = this.add.graphics().setDepth(3);
 
-    this.tweens.add({
-      targets: this.mariaGfx,
-      alpha: 0,
-      duration: 2000,
-      onComplete: () => this.mariaGfx.clear()
+    // Sombra
+    g.fillStyle(0x000000, 0.4);
+    g.fillEllipse(bx + 22, fy - 4, 64, 12);
+
+    // Base azul
+    g.fillStyle(0x1a3a8a);
+    g.fillRect(bx, by + 20, 44, 32);
+
+    // Tampa azul
+    g.fillStyle(0x2255bb);
+    g.fillRect(bx, by, 44, 22);
+    g.fillStyle(0x2a66cc);
+    g.fillEllipse(bx + 22, by, 44, 14);
+
+    // Faixas douradas
+    g.fillStyle(0xddaa00);
+    g.fillRect(bx + 19, by,      6,  52);
+    g.fillRect(bx,      by + 18, 44, 5);
+    g.fillRect(bx,      by,      6,  52);
+    g.fillRect(bx + 38, by,      6,  52);
+
+    // Cadeado
+    g.fillStyle(0xffcc00);
+    g.fillRect(bx + 17, by + 21, 10, 9);
+    g.lineStyle(2.5, 0xffcc00);
+    g.beginPath();
+    g.arc(bx + 22, by + 21, 5, Math.PI, 0);
+    g.strokePath();
+
+    // Rebites
+    g.fillStyle(0xffdd44);
+    [[bx+3,by+3],[bx+3,by+45],[bx+41,by+3],[bx+41,by+45]].forEach(([rx,ry]) => {
+      g.fillCircle(rx, ry, 3);
     });
 
-    // Aviso
-    const warn = this.add.text(GAME_W / 2, GAME_H / 2 - 20, '(!) ESCONDA-SE!', {
-      fontSize: '16px',
-      fontFamily: 'Courier New',
-      color: '#ff5555',
-      letterSpacing: 2,
-      backgroundColor: '#000000',
-      padding: { x: 10, y: 5 }
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(25);
-
+    // Brilho animado pulsante — ajuda a achar no escuro
+    const glow = this.add.rectangle(bx + 22, by + 26, 80, 80, 0x3366ff, 0.10).setDepth(2);
     this.tweens.add({
-      targets: warn,
-      alpha: { from: 1, to: 0.3 },
-      duration: 300,
-      yoyo: true,
-      repeat: 6,
-      onComplete: () => warn.destroy()
+      targets: glow,
+      alpha: { from: 0.05, to: 0.22 },
+      duration: 700, yoyo: true, repeat: -1
     });
 
-    // Dano se não se esconder
-    this.time.delayedCall(2000, () => {
-      if (!this.inHiding && !this.hitCooldown) {
-        this.hitCooldown = true;
+    // Partículas douradas
+    [0,1,2].forEach(i => {
+      const spark = this.add.rectangle(bx + 5 + i*17, by - 8 - i*4, 3, 3, 0xffdd44).setDepth(3);
+      this.tweens.add({ targets: spark, y: spark.y - 14, alpha: 0,
+        duration: 800 + i*200, repeat: -1, delay: i*300 });
+    });
 
-        if (GameState.damage(1)) {
-          this.transitionTo('GameOverScene');
-        }
+    this.bauZone = this.add.zone(bx + 22, by + 26, 60, 60);
+    this.physics.add.existing(this.bauZone, true);
+    this.bauGfx = g;
+    this.bauX   = bx;
+    this.bauY   = by;
+  }
 
-        this.time.delayedCall(1500, () => {
-          this.hitCooldown = false;
-        });
+ // Na Phase5Scene.js, no método abrirBau():
+
+abrirBau() {
+  if (this.bauAberto) return;
+  
+  console.log("ABRINDO BAÚ!");
+  this.bauAberto = true;
+
+  // Redesenhar baú aberto
+  const g = this.bauGfx, bx = this.bauX, by = this.bauY, fy = this.floorY;
+  g.clear();
+  g.fillStyle(0x000000, 0.4);
+  g.fillEllipse(bx + 22, fy - 4, 64, 12);
+  g.fillStyle(0x1a3a8a);
+  g.fillRect(bx, by + 20, 44, 32);
+  g.fillStyle(0xddaa00);
+  g.fillRect(bx, by + 18, 44, 5);
+  g.fillRect(bx,      by + 18, 6, 34);
+  g.fillRect(bx + 38, by + 18, 6, 34);
+  g.fillRect(bx + 19, by + 18, 6, 34);
+  g.fillStyle(0x2255bb);
+  g.fillRect(bx - 4, by - 30, 52, 18);
+  g.fillStyle(0x2a66cc);
+  g.fillEllipse(bx + 22, by - 30, 52, 10);
+  g.fillStyle(0xddaa00);
+  g.fillRect(bx - 4,  by - 30, 6, 18);
+  g.fillRect(bx + 42, by - 30, 6, 18);
+  g.fillStyle(0x8855aa, 0.5);
+  g.fillRect(bx + 3, by + 22, 38, 26);
+
+  // 🔥 CRIAR A CHAVE VISUAL DENTRO DO BAÚ 🔥
+  // Chamar o método da BaseScene para criar a chave
+  this.createHiddenKey(bx + 22, by + 35);
+  
+  // A chave agora aparece e o jogador precisa passar por cima para pegar
+  // (o método createHiddenKey já configura tudo: visual, brilho, zona de coleta)
+  
+  // Mensagem indicando que a chave apareceu
+  const msg = this.add.text(GAME_W / 2, GAME_H / 2 - 40, TEXTS.KEY_FOUND, {
+    fontSize: '18px',
+    fontFamily: 'Courier New',
+    color: '#ffdd44',
+    stroke: '#000000',
+    strokeThickness: 3
+  }).setOrigin(0.5).setScrollFactor(0).setDepth(30);
+  
+  this.tweens.add({
+    targets: msg,
+    y: msg.y - 30,
+    alpha: 0,
+    duration: 2000,
+    onComplete: () => msg.destroy()
+  });
+}
+  // ── SCREECH ───────────────────────────────────────────────
+  criarScreech() {
+    const x = Phaser.Math.Between(GAME_W * 0.6, this.worldWidth * 0.85);
+    const container = this.add.container(x, 45).setDepth(19);
+
+    const corpo = this.add.ellipse(0, 0, 30, 20, 0x0d0505);
+    corpo.setStrokeStyle(1.5, 0x880000);
+
+    const patas = this.add.graphics();
+    patas.lineStyle(1, 0x660000, 0.8);
+    [[-18,-8],[-22,0],[-18,8],[18,-8],[22,0],[18,8]].forEach(([px,py]) => {
+      patas.beginPath(); patas.moveTo(0,0); patas.lineTo(px,py); patas.strokePath();
+    });
+
+    const olhoE = this.add.ellipse(-6, -2, 7, 9, 0xff0000);
+    const olhoD = this.add.ellipse( 6, -2, 7, 9, 0xff0000);
+    const pupE  = this.add.ellipse(-6, -2, 3, 5, 0x220000);
+    const pupD  = this.add.ellipse( 6, -2, 3, 5, 0x220000);
+
+    container.add([patas, corpo, olhoE, olhoD, pupE, pupD]);
+
+    container.vx = Phaser.Math.Between(18, 32) * (Math.random() < 0.5 ? 1 : -1);
+    container.vy = Phaser.Math.Between(5, 12)  * (Math.random() < 0.5 ? 1 : -1);
+
+    this.tetoTween = this.tweens.add({
+      targets: container, y: 52,
+      duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+    });
+
+    return container;
+  }
+
+  // ── UPDATE ────────────────────────────────────────────────
+  update(time, delta) {
+    if (this.transitioning) return;
+
+    this.handleMovement();
+    this.drawPlayer();
+
+    if (!this.screechDerrotado) {
+      this.moverScreech(delta);
+      this.atualizarTimer(delta);
+      this.verificarLanterna();
+    }
+
+    if (this.portaAberta && this.isNear(this.exitZone)) {
+      if (this.keyFound) {
+        this.transitionTo('FinalScene');
+      } else {
+        this.showLockedMessage();
       }
-      this.time.delayedCall(2000, () => {
-        this.mariaCooldown = false;
-      });
-    });
+    }
+
+    if (!this.bauAberto && this.isNear(this.bauZone) && !this.activePrompt) {
+      this.createPrompt('[E] Abrir baú', -70, '#ffdd44');
+    } else if ((this.bauAberto || !this.isNear(this.bauZone)) && this.activePrompt) {
+      this.activePrompt.destroy();
+      this.activePrompt = null;
+    }
+
+    if (this.portaAberta && this.isNear(this.exitZone) && !this.activePrompt) {
+      this.createPrompt(this.keyFound ? TEXTS.ENTER : TEXTS.NEED_KEY, -70,
+        this.keyFound ? '#ffdd44' : '#ff6666');
+    }
+
+    // Lanterna — sempre por último
+    this.desenharLanterna();
   }
 
   handleInteract() {
     if (this.transitioning) return;
+    if (!this.bauAberto && this.isNear(this.bauZone)) this.abrirBau();
+  }
 
-    // Verificar esconderijos
-    for (let hide of this.hideZones) {
-      if (this.isNear(hide)) {
-        this.inHiding = !this.inHiding;
-        this.player.body.setAllowGravity(!this.inHiding);
-        if (this.inHiding) this.player.body.setVelocity(0, 0);
-        return;
+  // ── MOVE SCREECH ──────────────────────────────────────────
+  moverScreech(delta) {
+    const dt = delta / 1000;
+
+    if (this.screechAtacando) {
+      const dx   = this.player.x - this.screechObj.x;
+      const dy   = this.player.y - this.screechObj.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > 20) {
+        // Velocidade aumenta a cada ciclo de ataque (mais agressivo)
+        const velocidade = 160 + this.cicloAtaque * 25;
+        this.screechObj.x += (dx / dist) * velocidade * dt;
+        this.screechObj.y += (dy / dist) * velocidade * dt;
+      } else {
+        this.screechAtacando = false;
+        this.aplicarDanoAtaque();
       }
-    }
+    } else {
+      this.screechObj.x += this.screechObj.vx * dt;
+      this.screechObj.y += this.screechObj.vy * dt;
 
-    // Verificar saída
-    if (this.isNear(this.exitZone)) {
-      this.transitionTo('FinalScene');
+      if (this.screechObj.x < 40 || this.screechObj.x > this.worldWidth - 40)
+        this.screechObj.vx *= -1;
+      if (this.screechObj.y < 35 || this.screechObj.y > 85)
+        this.screechObj.vy *= -1;
+
+      this.screechObj.y = Phaser.Math.Clamp(this.screechObj.y, 35, 85);
     }
   }
 
-  update() {
-    if (this.transitioning) return;
+  // ── TIMER PROPORCIONAL ────────────────────────────────────
+  // Ciclo 0: 30s | Ciclo 1: 22s | Ciclo 2: 16s | Ciclo 3+: 12s
+  atualizarTimer(delta) {
+    if (this.punicaoAplicada || this.screechAtacando) return;
+    this.tempoPassado += delta;
 
-    // Verifica se está escondido
-    if (this.inHiding) {
-      this.player.body.setVelocity(0, 0);
-      this.player.body.setAllowGravity(false);
+    if (this.tempoPassado >= this.tempoLimite) {
+      this.punicaoAplicada = true;
+      this.cicloAtaque++;
 
-      // Desenha silhueta
-      const hideX = this.hideXs.find(hx => Math.abs(this.player.x - hx) < 50) || this.player.x;
-      this.playerGfx.clear();
-      this.playerGfx.fillStyle(0x112233, 0.7);
-      this.playerGfx.fillRect(hideX - 8, this.player.y - 35, 16, 35);
-    } else {
-      this.player.body.setAllowGravity(true);
-      this.handleMovement();
-      this.drawPlayer();
-      this.checkEnemyCollision();
+      if (this.tetoTween) this.tetoTween.stop();
+      this.screechAtacando = true;
+
+      // Som + flash vermelho imediato ao iniciar ataque
+      try { this.sound.play('screech_jumpscare', { volume: 1.5 }); } catch(e) {}
+
+      const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff0000, 0.55)
+        .setScrollFactor(0).setDepth(60);
+      this.tweens.add({
+        targets: flash, alpha: 0, duration: 800,
+        onComplete: () => flash.destroy()
+      });
+    }
+  }
+
+  // ── DANO ──────────────────────────────────────────────────
+  aplicarDanoAtaque() {
+    const morreu = GameState.damage(2);
+
+    if (morreu) {
+      this.time.delayedCall(900, () => this.transitionTo('GameOverScene'));
+      return;
     }
 
-    this.drawEnemies();
+    // Screech volta ao teto
+    this.time.delayedCall(400, () => {
+      if (!this.screechObj) return;
+      this.screechObj.x = Phaser.Math.Between(300, this.worldWidth - 300);
+      this.screechObj.y = 45;
+      this.screechObj.alpha = 1;
 
-    // Gatilhos da Maria
-    this.mariaTriggerXs.forEach((tx, i) => {
-      if (!this.mariaTriggered[i] && Math.abs(this.player.x - tx) < 40) {
-        this.mariaTriggered[i] = true;
-        this.triggerMaria();
-      }
+      this.tetoTween = this.tweens.add({
+        targets: this.screechObj, y: 52,
+        duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+
+      // Próximo timer: 30s → 22s → 16s → 12s (mínimo)
+      const limites = [30000, 22000, 16000, 12000];
+      this.tempoLimite  = limites[Math.min(this.cicloAtaque, limites.length - 1)];
+      this.tempoPassado = 0;
+      this.punicaoAplicada = false;
+    });
+  }
+
+  // ── LANTERNA MATA INSTANTANEAMENTE ────────────────────────
+  verificarLanterna() {
+    if (this.screechDerrotado) return;
+
+    const cam     = this.cameras.main;
+    const screenX = this.screechObj.x - cam.scrollX;
+    const screenY = this.screechObj.y - cam.scrollY;
+    const dx      = this.input.x - screenX;
+    const dy      = this.input.y - screenY;
+    const dist    = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 90 + 35) {
+      this.derrotarScreech();
+    }
+  }
+
+  derrotarScreech() {
+    if (this.screechDerrotado) return;
+    this.screechDerrotado = true;
+    this.screechAtacando  = false;
+
+    if (this.tetoTween) this.tetoTween.stop();
+
+    this.tweens.add({
+      targets: this.screechObj,
+      alpha: 0, scaleX: 2.5, scaleY: 2.5, duration: 400,
+      onComplete: () => { if (this.screechObj) this.screechObj.destroy(); }
     });
 
-    // Prompts
-    let nearHide = false;
-    for (let hide of this.hideZones) {
-      if (this.isNear(hide)) {
-        nearHide = true;
-        break;
-      }
-    }
+    this.time.delayedCall(500, () => {
+      this.portaAberta = true;
+      this.portaGfx.setAlpha(1);
+      this.textPorta.setAlpha(1);
+      this.mostrarAviso('✅ Screech derrotado! Encontre a saída.', 3000);
+    });
+  }
 
-    if (nearHide && !this.activePrompt) {
-      this.createPrompt(this.inHiding ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70, '#44bbff');
-    } else if (this.isNear(this.exitZone) && !this.activePrompt && !nearHide) {
-      this.createPrompt(TEXTS.ENTER);
-    } else if (!nearHide && !this.isNear(this.exitZone) && this.activePrompt) {
-      this.activePrompt.destroy();
-      this.activePrompt = null;
-    }
+  // ── LANTERNA: mouse + luz ao redor do player ──────────────
+  desenharLanterna() {
+    const cam = this.cameras.main;
+
+    // Posição do player na tela
+    const px = this.player.x - cam.scrollX;
+    const py = this.player.y - cam.scrollY;
+
+    this.lantGfx.clear();
+    this.lantGfx.fillStyle(0xffffff);
+
+    // Círculo da lanterna (mouse) — raio 95
+    this.lantGfx.fillCircle(this.input.x, this.input.y, 95);
+
+    // Luz ao redor do player — raio 70 (pequena penumbra)
+    this.lantGfx.fillCircle(px, py-20, 70);
+  }
+
+  mostrarAviso(texto, duracao) {
+    this.textoAviso.setText(texto);
+    this.time.delayedCall(duracao, () => {
+      if (this.textoAviso) this.textoAviso.setText('');
+    });
   }
 }
 
