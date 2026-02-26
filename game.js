@@ -496,7 +496,7 @@ class BootScene extends Phaser.Scene {
 
     this.input.keyboard.once('keydown', () => {
       this.cameras.main.fadeOut(600, 0, 0, 0);
-      this.time.delayedCall(620, () => this.scene.start('Phase5Scene'));
+      this.time.delayedCall(620, () => this.scene.start('Phase3Scene'));
     });
   }
 
@@ -1690,109 +1690,138 @@ class Phase2Scene extends BaseScene {
     }
   }
 }
+
+
 // =============================================
-//  CENA: FASE 3 - SALA DO SALMÃO (COM DECORAÇÕES)
+//  FASE 3 — "A SALA DO SALMÃO"
 // =============================================
 class Phase3Scene extends BaseScene {
   constructor() {
     super('Phase3Scene');
-    this.worldWidth = 4000; // largura total do cenário
-  }
-  init() {
-    super.init();
     this.worldWidth = 4000;
   }
+
+  init() {
+    super.init();
+    this.worldWidth = 2000;
+  }
+
   create() {
     super.create();
     GameState.door = 3;
     GameState.updateUI();
     this.showPhaseTitle(TEXTS.PHASE_3);
 
-    // Variáveis da fase
-    this.timeLeft = 45;          // tempo total em segundos
-    this.keyFound = false;       // chave ainda não coletada
-    this.waterLevel = GAME_H + 100; // água começa abaixo da tela
-    this.gameActive = true;      // fase ativa desde o início
-    this.hitCooldown = false;    // controle para não tomar dano contínuo
-    this.underwaterTimer = null; // timer de afogamento
-    this.waterRiseSpeed = 0.4;   // velocidade inicial da água
-    this.stepXRef = 1400;        // posição X onde começa o desnível
+    // ── Estado da fase ──────────────────────────────────────────────────
+    this.timeLeft = 60;
+    this.keyFound = false;
+    this.gameActive = true;
+    this.hitCooldown = false;
+    this.underwaterTimer = null;
+    this.stepXRef = 750;
 
+    // ── Estado da água ──────────────────────────────────────────────────
+    // Nível BASE (água sobe até aqui quando alavanca 1 está ativada)
+    this.waterLevelBase = 260;          // nível alto (submerge alavanca 2)
+    this.waterLevelLow = GAME_H + 100; // abaixo da tela (água baixa)
+    this.waterLevel = GAME_H + 100; // começa fora
+    this.waterTargetLevel = GAME_H + 100; // alvo atual
+    this.waterRiseSpeed = 1.2;          // px por frame subindo (suave)
+    this.waterFallSpeed = 2.0;          // px por frame descendo (mais rápido)
+    this.waterRising = false;        // alavanca 1 ativa?
+
+    // ── Estado dos puzzles ──────────────────────────────────────────────
+    this.lever1Active = false;  // alavanca 1: sobe/para a água
+    this.lever2Active = false;  // alavanca 2: baixa água + desliza bloco
+    this.button1Revealed = false;  // botão 1 está visível (debaixo do bloco)
+    this.button1Pressed = false;  // botão 1 foi pressionado?
+    this.button2Revealed = false;  // botão 2 foi revelado?
+    this.button2Pressed = false;  // botão 2 foi pressionado?
+    this.doorBlockOpen = false;  // bloco esquerdo da porta está aberto?
+    this.doorBlockTimer = null;   // timer para fechar o bloco da porta
+    this.concreteSliding = false;  // bloco de concreto animando?
+    this.doorBlockY = 0;      // posição Y atual do bloco da porta
+    this.doorBlockTargetY = 0;      // posição Y alvo do bloco da porta
+
+    // ── Grupos e objetos ────────────────────────────────────────────────
     this.platforms = this.physics.add.staticGroup();
     this.salmons = [];
 
-    // Constrói o cenário
+    // ── Construção do cenário ───────────────────────────────────────────
     this.buildRoom();
     this.createWater();
     this.createSalmons();
     this.createCoral();
     this.createBubbles();
     this.createTimerUI();
-    this.createHiddenKey(1400, 105);
     this.createPlayerBubbles();
 
-    // Colisões e overlaps
-    this.physics.add.collider(this.player, this.platforms);
-    this.physics.add.overlap(this.player, this.keyZone, this.collectKey, null, this);
+    // ── Puzzles ─────────────────────────────────────────────────────────
+    this.createLever1();
+    this.createLever2();
+    this.createButton1Setup();
+    this.createDoorBlock();
 
-    // Câmera começa fixa verticalmente na primeira metade
+    // ── Colisões ────────────────────────────────────────────────────────
+    this.physics.add.collider(this.player, this.platforms);
+
+    // ── Câmera ──────────────────────────────────────────────────────────
     this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
     this.startTimer();
-
   }
-  // Constrói chão, desnível, escadinha, plataformas e porta
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  CENÁRIO
+  // ════════════════════════════════════════════════════════════════════════
   buildRoom() {
-    const gBg = this.add.graphics().setDepth(0); // fundo
+    const gBg = this.add.graphics().setDepth(0);
     gBg.fillStyle(0x050d14);
     gBg.fillRect(0, 0, this.worldWidth, GAME_H + 200);
 
-    const g = this.add.graphics().setDepth(1); // resto do cenário
+    const g = this.add.graphics().setDepth(1);
 
-    const floorY1 = this.floorY;      // nível do chão da primeira metade
-    const floorY2 = this.floorY + 80; // nível do chão da segunda metade (mais baixo)
-    const stepX = this.stepXRef;      // onde começa a escadinha
-    this.floorY2 = floorY2;           // salva para uso em outros métodos
+    const floorY1 = this.floorY;
+    const floorY2 = this.floorY + 80;
+    const stepX = this.stepXRef;
+    this.floorY2 = floorY2;
 
-    // Chão da primeira metade
+    // ── Chão primeira metade ────────────────────────────────────────────
     g.fillStyle(0x0d1e2a);
     g.fillRect(0, floorY1, stepX, 80);
     g.fillStyle(0x1a3444);
-    g.fillRect(0, floorY1, stepX, 3); // borda superior do chão
+    g.fillRect(0, floorY1, stepX, 3);
 
-    // Três degraus da escadinha de descida
+    // ── Degraus ─────────────────────────────────────────────────────────
     g.fillStyle(0x0d1e2a);
     g.fillRect(stepX, floorY1 + 20, 80, 80);
     g.fillRect(stepX + 80, floorY1 + 40, 80, 80);
     g.fillRect(stepX + 160, floorY1 + 60, 80, 80);
-    // Bordas dos degraus
     g.fillStyle(0x1a3444);
     g.fillRect(stepX, floorY1 + 20, 80, 3);
     g.fillRect(stepX + 80, floorY1 + 40, 80, 3);
     g.fillRect(stepX + 160, floorY1 + 60, 80, 3);
 
-    // Chão da segunda metade (nível mais baixo)
+    // ── Chão segunda metade ─────────────────────────────────────────────
     g.fillStyle(0x0d1e2a);
     g.fillRect(stepX + 240, floorY2, this.worldWidth - stepX - 240, 100);
     g.fillStyle(0x1a3444);
     g.fillRect(stepX + 240, floorY2, this.worldWidth - stepX - 240, 3);
 
-    // Teto
+    // ── Teto e paredes ──────────────────────────────────────────────────
     g.fillStyle(0x050d14);
     g.fillRect(0, 0, this.worldWidth, 30);
-
-    // Paredes laterais
     g.fillStyle(0x080f18);
     g.fillRect(0, 0, 20, GAME_H + 150);
     g.fillRect(this.worldWidth - 20, 0, 20, GAME_H + 150);
 
-    // Física do chão primeira metade
+    // ── Física: chão 1 ──────────────────────────────────────────────────
     const floor1 = this.add.rectangle(stepX / 2, floorY1 + 40, stepX, 80).setVisible(false);
     this.physics.add.existing(floor1, true);
     this.platforms.add(floor1);
 
-    // Física dos degraus
+    // ── Física: degraus ─────────────────────────────────────────────────
     [
       { x: stepX + 40, y: floorY1 + 60, w: 80 },
       { x: stepX + 120, y: floorY1 + 80, w: 80 },
@@ -1803,13 +1832,13 @@ class Phase3Scene extends BaseScene {
       this.platforms.add(r);
     });
 
-    // Física do chão segunda metade
+    // ── Física: chão 2 ──────────────────────────────────────────────────
     const floor2W = this.worldWidth - stepX - 240;
     const floor2 = this.add.rectangle(stepX + 240 + floor2W / 2, floorY2 + 50, floor2W, 100).setVisible(false);
     this.physics.add.existing(floor2, true);
     this.platforms.add(floor2);
 
-    // Física das paredes
+    // ── Física: paredes ─────────────────────────────────────────────────
     const wallL = this.add.rectangle(10, GAME_H / 2, 20, GAME_H + 150).setVisible(false);
     const wallR = this.add.rectangle(this.worldWidth - 10, GAME_H / 2, 20, GAME_H + 150).setVisible(false);
     [wallL, wallR].forEach(w => {
@@ -1817,35 +1846,28 @@ class Phase3Scene extends BaseScene {
       this.platforms.add(w);
     });
 
-    // Plataformas da primeira metade
+    // ── Plataformas primeira metade ─────────────────────────────────────
     const platforms1 = [
       { x: 100, y: 350, w: 150 },
       { x: 350, y: 270, w: 120 },
       { x: 600, y: 190, w: 130 },
-      { x: 850, y: 300, w: 110 },
-      { x: 1050, y: 170, w: 120 },
       { x: 200, y: 140, w: 100 },
     ];
 
-    // Plataformas da segunda metade (baseadas no floorY2)
+    // ── Plataformas segunda metade ──────────────────────────────────────
     const platforms2 = [
-      { x: 1700, y: floorY2 - 130, w: 130 },
-      { x: 1950, y: floorY2 - 210, w: 120 },
-      { x: 2200, y: floorY2 - 150, w: 110 },
-      { x: 2500, y: floorY2 - 230, w: 130 },
+      { x: 1700, y: floorY2 - 230, w: 130 }, // ← alavanca 2 fica aqui (alta, precisa de água)
       { x: 2750, y: floorY2 - 170, w: 120 },
       { x: 3000, y: floorY2 - 250, w: 130 },
       { x: 3250, y: floorY2 - 180, w: 120 },
       { x: 3500, y: floorY2 - 130, w: 110 },
     ];
 
-    // Desenha e cria física de todas as plataformas
     [...platforms1, ...platforms2].forEach(p => {
       g.fillStyle(0x122230);
       g.fillRect(p.x, p.y, p.w, 16);
       g.fillStyle(0x1e3a50);
       g.fillRect(p.x, p.y, p.w, 3);
-      // Algas decorativas em cima das plataformas
       g.fillStyle(0x0d4422, 0.7);
       g.fillRect(p.x + 10, p.y - 15, 4, 15);
       g.fillRect(p.x + 20, p.y - 22, 4, 22);
@@ -1855,19 +1877,37 @@ class Phase3Scene extends BaseScene {
       this.platforms.add(plat);
     });
 
-    // Plataforma submersa no final — porta fica aqui
-    const platFinal = { x: 3750, y: floorY2 - 60, w: 180 };
-    g.fillStyle(0x122230);
-    g.fillRect(platFinal.x, platFinal.y, platFinal.w, 16);
-    g.fillStyle(0x1e3a50);
-    g.fillRect(platFinal.x, platFinal.y, platFinal.w, 3);
-    const platFinalR = this.add.rectangle(platFinal.x + platFinal.w / 2, platFinal.y + 8, platFinal.w, 16).setVisible(false);
-    this.physics.add.existing(platFinalR, true);
-    this.platforms.add(platFinalR);
+    // ── Plataforma alta da porta (canto superior direito) ───────────────
+    // Posição: bem alta, próxima à parede direita
+    const doorPlatY = 110; // bem alto
+    const doorPlatX = this.worldWidth - 250;
+    const doorPlatW = 220;
 
-    // Porta em cima da plataforma submersa
-    const dx = platFinal.x + platFinal.w / 2 - 27, dw = 55, dh = 95;
-    const dy = platFinal.y - dh;
+    g.fillStyle(0x1a2d40);
+    g.fillRect(doorPlatX, doorPlatY, doorPlatW, 18);
+    g.fillStyle(0x2a4a64);
+    g.fillRect(doorPlatX, doorPlatY, doorPlatW, 3);
+
+    const doorPlat = this.add.rectangle(doorPlatX + doorPlatW / 2, doorPlatY + 9, doorPlatW, 18).setVisible(false);
+    this.physics.add.existing(doorPlat, true);
+    this.platforms.add(doorPlat);
+
+    // Salva referência para posicionar a porta e os blocos
+    this.doorPlatX = doorPlatX;
+    this.doorPlatY = doorPlatY;
+    this.doorPlatW = doorPlatW;
+
+    // ── Porta ───────────────────────────────────────────────────────────
+    const dx = doorPlatX + doorPlatW / 2 - 27;
+    const dy = doorPlatY - 95;
+    const dw = 55, dh = 95;
+    this.buildDoor(dx, dy, dw, dh);
+
+    // ── Blocos de concreto ao redor da porta (visual) ───────────────────
+    this.drawDoorConcreteBlocks(g, dx, dy, dw, dh);
+  }
+
+  buildDoor(dx, dy, dw, dh) {
     const gDoor = this.add.graphics().setDepth(8);
     gDoor.fillStyle(COLORS.doorFrame);
     gDoor.fillRect(dx - 4, dy - 6, dw + 8, dh + 8);
@@ -1880,25 +1920,677 @@ class Phase3Scene extends BaseScene {
     gDoor.fillCircle(dx + dw - 10, dy + dh / 2, 4);
 
     const glow = this.add.rectangle(dx + dw / 2, dy + dh / 2, dw + 20, dh + 20, COLORS.doorGlow, 0.06).setDepth(5);
-    this.tweens.add({
-      targets: glow,
-      alpha: { from: 0.03, to: 0.15 },
-      duration: 1200,
-      yoyo: true,
-      repeat: -1
-    });
+    this.tweens.add({ targets: glow, alpha: { from: 0.03, to: 0.15 }, duration: 1200, yoyo: true, repeat: -1 });
 
     this.add.text(dx + dw / 2, dy - 18, '003', {
-      fontSize: '14px', fontFamily: 'Courier New',
-      color: '#bb99ff', letterSpacing: 2
-    }).setOrigin(0.5).setDepth(6);
+      fontSize: '14px', fontFamily: 'Courier New', color: '#bb99ff', letterSpacing: 2
+    }).setOrigin(0.5).setDepth(9);
 
     this.doorZone = this.add.zone(dx + dw / 2, dy + dh / 2, dw, dh);
     this.physics.add.existing(this.doorZone, true);
     this.doorDestination = 'Phase4Scene';
+
+    // Salva posições para os blocos
+    this.doorDx = dx; this.doorDy = dy; this.doorDw = dw; this.doorDh = dh;
   }
 
-  // Cria os salmões com posição, direção, velocidade e profundidade na água
+  drawDoorConcreteBlocks(g, dx, dy, dw, dh) {
+    // Blocos de concreto finos ao redor da porta
+    // Bloco superior
+    g.fillStyle(0x2a3a4a);
+    g.fillRect(dx - 8, dy - 14, dw + 16, 10);
+    g.fillStyle(0x3a5060, 0.6);
+    g.fillRect(dx - 8, dy - 14, dw + 16, 2);
+
+    // Bloco direito (fixo — parede direita está perto)
+    g.fillStyle(0x2a3a4a);
+    g.fillRect(dx + dw + 4, dy - 14, 10, dh + 22);
+    g.fillStyle(0x3a5060, 0.6);
+    g.fillRect(dx + dw + 4, dy - 14, 2, dh + 22);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  BLOCO ESQUERDO DA PORTA (o que o botão 2 abre)
+  // ════════════════════════════════════════════════════════════════════════
+  createDoorBlock() {
+    const dx = this.doorDx, dy = this.doorDy, dh = this.doorDh;
+
+    // Bloco fica à esquerda da porta
+    const bx = dx - 8;
+    const bw = 10;
+    const bh = dh + 22;
+    const by = dy - 14; // posição Y fechado (bloqueando)
+
+    this.doorBlockClosedY = by;
+    this.doorBlockOpenY = by - bh - 20; // sobe para fora do frame
+    this.doorBlockY = by;
+    this.doorBlockTargetY = by;
+
+    // Gráfico do bloco (será redesenhado no update)
+    this.doorBlockGfx = this.add.graphics().setDepth(9);
+    this._redrawDoorBlock();
+
+    // Física do bloco (colisão com o player para impedir entrada)
+    this.doorBlockPhysRect = this.add.rectangle(bx + bw / 2, by + bh / 2, bw, bh).setVisible(false);
+    this.physics.add.existing(this.doorBlockPhysRect, true);
+    this.platforms.add(this.doorBlockPhysRect);
+
+    this._doorBlockBx = bx; this._doorBlockBw = bw; this._doorBlockBh = bh;
+  }
+
+  _redrawDoorBlock() {
+    const g = this.doorBlockGfx;
+    g.clear();
+    if (this.doorBlockOpen && this.doorBlockY <= this.doorBlockOpenY + 5) return; // já aberto — invisível
+
+    const bx = this._doorBlockBx;
+    const bw = this._doorBlockBw;
+    const bh = this._doorBlockBh;
+    const by = this.doorBlockY;
+
+    g.fillStyle(0x2a3a4a);
+    g.fillRect(bx, by, bw, bh);
+    g.fillStyle(0x3a5060, 0.6);
+    g.fillRect(bx, by, 2, bh);
+    // Detalhes de parafusos
+    g.fillStyle(0x1a2530);
+    g.fillCircle(bx + bw / 2, by + 8, 2);
+    g.fillCircle(bx + bw / 2, by + bh - 8, 2);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  ALAVANCA 1  —  controla a água (sobe / para)
+  //  Posição: início do cenário, chão da primeira metade, próxima à parede E
+  // ════════════════════════════════════════════════════════════════════════
+  createLever1() {
+    const lx = 120;
+    const ly = this.floorY - 32; // em cima do chão
+
+    this.lever1X = lx;
+    this.lever1Y = ly;
+    this.lever1Gfx = this.add.graphics().setDepth(5);
+    this._drawLever(this.lever1Gfx, lx, ly, this.lever1Active, 1);
+
+    // Zona de interação
+    this.lever1Zone = this.add.zone(lx, ly - 10, 40, 50);
+    this.physics.add.existing(this.lever1Zone, true);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  ALAVANCA 2  —  plataforma alta (x≈2500), só alcançável com água alta
+  //  Ao ativar: baixa a água + desliza bloco de concreto sobre o botão 1
+  // ════════════════════════════════════════════════════════════════════════
+  createLever2() {
+    // Plataforma de referência: { x: 1700, y: floorY2 - 230, w: 130 }
+    const platY = this.floorY2 - 230;
+    const platX = 1700;
+    const platW = 130;
+
+    const lx = platX + platW / 2; // centro da plataforma
+    const ly = platY - 32;
+
+    this.lever2X = lx;
+    this.lever2Y = ly;
+    this.lever2Gfx = this.add.graphics().setDepth(5);
+    this._drawLever(this.lever2Gfx, lx, ly, this.lever2Active, 2);
+
+    this.lever2Zone = this.add.zone(lx, ly - 10, 40, 50);
+    this.physics.add.existing(this.lever2Zone, true);
+
+    // Altura mínima da superfície da água para alcançar a plataforma
+    // (a plataforma fica em platY, precisa flutuar perto)
+    this.lever2RequiredWaterLevel = platY + 60; // player precisa estar flutuando perto
+  }
+
+  _drawLever(g, x, y, active, id) {
+    g.clear();
+    // Base da alavanca
+    g.fillStyle(0x334455);
+    g.fillRect(x - 12, y + 10, 24, 14);
+    g.fillStyle(0x445566);
+    g.fillRect(x - 12, y + 10, 24, 3);
+
+    // Haste — inclina conforme o estado
+    const angle = active ? -0.7 : 0.7; // radianos
+    const len = 28;
+    const ex = x + Math.sin(angle) * len;
+    const ey = (y + 10) - Math.cos(angle) * len;
+
+    g.lineStyle(4, active ? 0x44ffaa : 0x888899);
+    g.beginPath();
+    g.moveTo(x, y + 10);
+    g.lineTo(ex, ey);
+    g.strokePath();
+
+    // Bolinha no topo
+    g.fillStyle(active ? 0x44ffaa : 0xaabbcc);
+    g.fillCircle(ex, ey, 6);
+
+    // Label pequeno
+    g.fillStyle(active ? 0x44ffaa : 0x556677, 0.9);
+    g.fillRect(x - 8, y + 26, 16, 5);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  BOTÃO 1 + estrutura de concreto + caixote
+  //  Posição: próximo à parede/escada, chão segunda metade
+  // ════════════════════════════════════════════════════════════════════════
+  createButton1Setup() {
+    // Botão 1 fica logo após a descida, próximo à parede da escada
+    const btn1X = 1500;
+    const btn1Y = this.floorY2; // nível do chão
+
+    this.btn1X = btn1X;
+    this.btn1Y = btn1Y;
+
+    // Estrutura de concreto: 3 blocos empilhados + 1 bloco no topo que desliza
+    // Layout: [bloco esq fixo] [bloco top MÓVEL] [bloco dir fixo]
+    // O botão fica dentro, escondido pelo bloco móvel quando active=false
+    // Após alavanca2: bloco móvel desliza p/ direita → botão aparece
+
+    this._drawButton1Setup();
+    this._createCrate();
+    this._createRock2();
+
+
+  }
+
+  _drawButton1Setup() {
+    const bx = this.btn1X;
+    const by = this.btn1Y;
+    const bw = 16;  // blocos laterais finos
+    const inner = 60;  // abertura interna — espaço onde o player entra
+    const bh = 70;  // altura dos blocos laterais
+    const tbh = 12;  // altura do bloco deslizante (fino)
+
+    // Salva tudo para uso nos outros métodos
+    this._btn1Bx = bx;
+    this._btn1By = by;
+    this._btn1Bw = bw;
+    this._btn1Bh = bh;
+    this._btn1TbH = tbh;
+    this._btn1Inner = inner;
+
+    // ── Gráfico fixo (blocos laterais) ──────────────────────────────────
+    const g = this.add.graphics().setDepth(4);
+
+    // Bloco esquerdo fixo — de (bx - bw) até (bx)
+    g.fillStyle(0x2a3a4a);
+    g.fillRect(bx - bw, by - bh, bw, bh);
+    g.fillStyle(0x3a5060, 0.5);
+    g.fillRect(bx - bw, by - bh, bw, 2);   // borda superior
+    g.fillRect(bx - bw, by - bh, 2, bh);   // borda esquerda
+    // Parafusos decorativos
+    g.fillStyle(0x1a2530);
+    g.fillCircle(bx - bw + 5, by - bh + 8, 2);
+    g.fillCircle(bx - bw + 5, by - 8, 2);
+
+    // Bloco direito fixo — de (bx + inner) até (bx + inner + bw)
+    g.fillStyle(0x2a3a4a);
+    g.fillRect(bx + inner, by - bh, bw, bh);
+    g.fillStyle(0x3a5060, 0.5);
+    g.fillRect(bx + inner, by - bh, bw, 2);          // borda superior
+    g.fillRect(bx + inner + bw - 2, by - bh, 2, bh); // borda direita
+    // Parafusos decorativos
+    g.fillStyle(0x1a2530);
+    g.fillCircle(bx + inner + bw - 5, by - bh + 8, 2);
+    g.fillCircle(bx + inner + bw - 5, by - 8, 2);
+
+    // ── Física dos blocos laterais ───────────────────────────────────────
+    // Bloco esq: centro X = bx - bw/2
+    const leftBlock = this.add.rectangle(bx - bw / 2, by - bh / 2, bw, bh).setVisible(false);
+    // Bloco dir: centro X = bx + inner + bw/2
+    const rightBlock = this.add.rectangle(bx + inner + bw / 2, by - bh / 2, bw, bh).setVisible(false);
+    this.physics.add.existing(leftBlock, true);
+    this.physics.add.existing(rightBlock, true);
+    this.platforms.add(leftBlock);
+    this.platforms.add(rightBlock);
+
+    // ── Bloco deslizante (começa cobrindo a abertura, desliza p/ direita) ─
+    // Largura total = bw (esq) + inner (abertura) + bw (dir) = cobre tudo
+    this.slidingBlockGfx = this.add.graphics().setDepth(6);
+    this.slidingBlockX = bx - bw;              // começa alinhado à borda esq
+    this.slidingBlockTargX = bx - bw;              // alvo inicial (parado)
+    this.slidingBlockW = bw + inner + bw;       // cobre toda a estrutura
+    this._redrawSlidingBlock();
+
+    // Física do bloco deslizante — bloqueia a entrada de cima
+    const slidingTopY = by - bh - tbh; // Y do topo da abertura
+    this.slidingBlockPhys = this.add.rectangle(
+      bx - bw + (bw + inner + bw) / 2,  // centro X inicial (cobre tudo)
+      slidingTopY + tbh / 2,             // centro Y
+      bw + inner + bw,                   // largura = mesma do visual
+      tbh                                // altura fina
+    ).setVisible(false);
+    this.physics.add.existing(this.slidingBlockPhys, true);
+    this.platforms.add(this.slidingBlockPhys);
+
+    // ── Botão 1 (no centro da abertura, inicialmente coberto) ────────────
+    const btnCenterX = bx + inner / 2;             // centro da abertura
+    this.btn1Gfx = this.add.graphics().setDepth(5);
+    this._drawButton(this.btn1Gfx, btnCenterX, by - 8, this.button1Pressed, '#ffaa00');
+
+    // Zona de interação — só funciona quando button1Revealed = true
+    this.button1Zone = this.add.zone(btnCenterX, by - 8, inner, 20);
+    this.physics.add.existing(this.button1Zone, true);
+  }
+
+  _redrawSlidingBlock() {
+    const g = this.slidingBlockGfx;
+    g.clear();
+    const bx = this.slidingBlockX;
+    const by = this._btn1By - this._btn1Bh - this._btn1TbH;
+    const bw = this.slidingBlockW;
+    const bh = this._btn1TbH;
+
+    g.fillStyle(0x2a3a4a);
+    g.fillRect(bx, by, bw, bh);
+    g.fillStyle(0x3a5060, 0.6);
+    g.fillRect(bx, by, bw, 2);
+    // Parafusos decorativos
+    g.fillStyle(0x1a2530);
+    g.fillCircle(bx + 8, by + bh / 2, 2);
+    g.fillCircle(bx + bw - 8, by + bh / 2, 2);
+  }
+
+  _createCrate() {
+    // Caixote de madeira em cima do bloco superior da estrutura
+    const cx = this._btn1Bx + this._btn1Bw / 2; // centro dos blocos
+    const cy = this._btn1By - this._btn1Bh - this._btn1TbH - 18; // em cima do bloco
+
+    this.crateGfx = this.add.graphics().setDepth(7);
+
+    // Física do caixote (dinâmica — pode flutuar)
+    this.crate = this.physics.add.image(cx, cy, '__DEFAULT').setVisible(false);
+    this.crate.setDisplaySize(28, 28);
+    this.crate.body.setSize(28, 28);
+    this.crate.body.setCollideWorldBounds(false);
+    this.crate.body.setBounce(0.1);
+    this.crate.body.setDragX(200);
+    this.crate.body.setGravityY(300);
+
+    this.physics.add.collider(this.crate, this.platforms);
+    this.physics.add.collider(this.crate, this.player, this._pushCrate, null, this);
+
+    this._drawCrate();
+  }
+
+  _drawCrate() {
+    const g = this.crateGfx;
+    g.clear();
+    const cx = this.crate.x - 14;
+    const cy = this.crate.y - 14;
+    const s = 28;
+
+    // Corpo de madeira
+    g.fillStyle(0x8B5E3C);
+    g.fillRect(cx, cy, s, s);
+
+    // Ripas verticais
+    g.lineStyle(1, 0x5a3a20, 0.8);
+    g.beginPath(); g.moveTo(cx + s / 3, cy); g.lineTo(cx + s / 3, cy + s); g.strokePath();
+    g.beginPath(); g.moveTo(cx + 2 * s / 3, cy); g.lineTo(cx + 2 * s / 3, cy + s); g.strokePath();
+
+    // Ripas horizontais
+    g.beginPath(); g.moveTo(cx, cy + s / 3); g.lineTo(cx + s, cy + s / 3); g.strokePath();
+    g.beginPath(); g.moveTo(cx, cy + 2 * s / 3); g.lineTo(cx + s, cy + 2 * s / 3); g.strokePath();
+
+    // Borda escura
+    g.lineStyle(2, 0x3a2010, 0.9);
+    g.strokeRect(cx, cy, s, s);
+
+    // Brilho
+    g.fillStyle(0xffffff, 0.08);
+    g.fillRect(cx + 2, cy + 2, s - 4, 4);
+  }
+
+  _pushCrate(player, crate) {
+    // O player empurra o caixote horizontalmente
+    const dir = crate.x > player.x ? 1 : -1;
+    crate.body.setVelocityX(dir * 180);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  BOTÃO 2  —  abre o bloco esquerdo da porta
+  //  Aparece após botão 1 ser pressionado
+  //  Posição: próximo ao final, antes da porta
+  // ════════════════════════════════════════════════════════════════════════
+  _createButton2() {
+    this.btn2Gfx = this.add.graphics().setDepth(5);
+    this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 8, false, '#00aaff');
+
+    this.button2Zone = this.add.zone(this.btn2X, this.btn2Y - 8, 50, 20);
+    this.physics.add.existing(this.button2Zone, true);
+
+    this.button2Revealed = true;
+  }
+
+  _redrawRock2() {
+    const g = this.rock2Gfx;
+    g.clear();
+    const rx = this.rock2X - this.rock2W / 2;
+    const ry = this.btn2Y - this.rock2H;
+    const rw = this.rock2W;
+    const rh = this.rock2H;
+
+    // Corpo da rocha — irregular com polígono
+    g.fillStyle(0x4a5560);
+    g.fillRect(rx + 4, ry, rw - 8, rh);       // centro
+    g.fillRect(rx, ry + 6, rw, rh - 10);       // laterais mais baixas
+    // Topo irregular
+    g.fillStyle(0x5a6570);
+    g.fillTriangle(rx + 4, ry, rx + rw / 2, ry - 8, rx + rw - 4, ry);
+    // Sombra / detalhe
+    g.fillStyle(0x2a3540, 0.6);
+    g.fillRect(rx + 4, ry + rh - 5, rw - 8, 4);
+    // Brilho
+    g.fillStyle(0x7a8a99, 0.4);
+    g.fillRect(rx + 6, ry + 4, 8, 3);
+  }
+
+  _drawButton(g, x, y, pressed, color) {
+    g.clear();
+    const col = Phaser.Display.Color.HexStringToColor(color).color;
+
+    // Corpo do botão
+    g.fillStyle(pressed ? col : 0x334455);
+    g.fillEllipse(x, y, 26, 12);
+
+    // Anel externo
+    g.lineStyle(2, col, pressed ? 1.0 : 0.5);
+    g.strokeEllipse(x, y, 32, 16);
+
+    // Brilho
+    g.fillStyle(0xffffff, pressed ? 0.3 : 0.1);
+    g.fillEllipse(x - 4, y - 2, 10, 5);
+  }
+
+  _updateRock2() {
+    if (!this.rock2Gfx) return;
+    const diff = this.rock2X - this.rock2TargX;
+    if (Math.abs(diff) > 0.5) {
+      this.rock2X -= diff * 0.08;
+      // Move física junto
+      this.rock2PhysRect.x = this.rock2X;
+      this.rock2PhysRect.body.reset(this.rock2X, this.rock2PhysRect.y);
+      this._redrawRock2();
+    }
+  }
+  _createRock2() {
+    const b2x = this.doorPlatX - 120;
+    const b2y = this.floorY2;
+
+    this.btn2X = b2x;
+    this.btn2Y = b2y;
+    this.rock2W = 60;
+    this.rock2H = 28;
+    this.rock2X = b2x;
+    this.rock2TargX = b2x; // parada até botão 1 ser pressionado
+
+    this.rock2Gfx = this.add.graphics().setDepth(6);
+    this._redrawRock2();
+
+    this.rock2PhysRect = this.add.rectangle(b2x, b2y - this.rock2H / 2, this.rock2W, this.rock2H).setVisible(false);
+    this.physics.add.existing(this.rock2PhysRect, true);
+    this.platforms.add(this.rock2PhysRect);
+  }
+  // ════════════════════════════════════════════════════════════════════════
+  //  ÁGUA
+  // ════════════════════════════════════════════════════════════════════════
+  createWater() {
+    this.waterGfx = this.add.graphics().setDepth(3);
+  }
+
+  updateWater() {
+    if (!this.gameActive || this.transitioning) return;
+
+    // Interpola suavemente em direção ao alvo
+    const diff = this.waterLevel - this.waterTargetLevel;
+    if (Math.abs(diff) > 0.5) {
+      this.waterLevel -= diff * 0.04 * this.waterRiseSpeed;
+    } else {
+      this.waterLevel = this.waterTargetLevel;
+    }
+
+    const g = this.waterGfx;
+    g.clear();
+
+    if (this.waterLevel >= GAME_H) return; // fora da tela
+
+    g.fillStyle(0x0044aa, 0.4);
+    g.fillRect(0, this.waterLevel, this.worldWidth, GAME_H + 200 - this.waterLevel);
+
+    // Superfície
+    const t = this.time.now / 800;
+    g.fillStyle(0x2266cc, 0.25);
+    for (let wx = 0; wx < this.worldWidth; wx += 80) {
+      const wave = Math.sin(t + wx * 0.02) * 3;
+      g.fillRect(wx, this.waterLevel + wave, 80, 6);
+    }
+    g.fillStyle(0x44aaff, 0.12);
+    g.fillRect(0, this.waterLevel + 4, this.worldWidth, 3);
+
+    // ── Física da água no player ────────────────────────────────────────
+    if (this.player.y > this.waterLevel + 10 && !this.transitioning) {
+      this.player.body.setGravityY(-500);
+      this.player.body.setMaxVelocityY(80);
+
+      if (this.cursors.up.isDown || this.keys.jump.isDown || this.spaceKey.isDown) {
+        this.player.body.setVelocityY(-500);
+        this.player.body.setMaxVelocityY(500);
+      }
+      if (this.cursors.down.isDown || this.keys.down.isDown) {
+        this.player.body.setVelocityY(120);
+      }
+
+      if (!this.underwaterTimer) {
+        this.underwaterTimer = this.time.delayedCall(15000, () => {
+          if (this.player.y > this.waterLevel) {
+            if (GameState.damage(1)) {
+              this.transitionTo('GameOverScene');
+            } else {
+              this.transitioning = true;
+              this.cameras.main.fadeOut(600, 0, 20, 60);
+              this.time.delayedCall(650, () => { this.scene.restart(); });
+            }
+          }
+          this.underwaterTimer = null;
+        });
+      }
+
+      // ── Flutuação do caixote ──────────────────────────────────────────
+      if (this.crate && this.crate.y > this.waterLevel) {
+        // Empuxo: quanto mais submerso, mais sobe
+        const submerge = Math.min(1, (this.crate.y - this.waterLevel) / 28);
+        this.crate.body.setGravityY(-500 * submerge);
+        this.crate.body.setMaxVelocityY(60);
+        this.crate.body.setDragX(300); // mais resistência na água
+      }
+    } else {
+      this.player.body.setGravityY(700);
+      this.player.body.setMaxVelocityY(900);
+
+      if (this.underwaterTimer) {
+        this.underwaterTimer.remove();
+        this.underwaterTimer = null;
+      }
+
+      // Caixote fora da água — gravidade normal
+      if (this.crate && this.crate.y <= this.waterLevel) {
+        this.crate.body.setGravityY(300);
+        this.crate.body.setMaxVelocityY(400);
+        this.crate.body.setDragX(200);
+      }
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  ANIMAÇÃO: bloco deslizante sobre o botão 1
+  // ════════════════════════════════════════════════════════════════════════
+  _updateSlidingBlock() {
+    const diff = this.slidingBlockX - this.slidingBlockTargX;
+    if (Math.abs(diff) > 0.5) {
+      this.slidingBlockX -= diff * 0.08;
+
+      // Move a física junto com o visual
+      this.slidingBlockPhys.x = this.slidingBlockX + this.slidingBlockW / 2;
+      this.slidingBlockPhys.body.reset(
+        this.slidingBlockPhys.x,
+        this.slidingBlockPhys.y
+      );
+
+      this._redrawSlidingBlock();
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  ANIMAÇÃO: bloco da porta (sobe ao abrir)
+  // ════════════════════════════════════════════════════════════════════════
+  _updateDoorBlock() {
+    if (!this.doorBlockOpen) return;
+
+    const diff = this.doorBlockY - this.doorBlockTargetY;
+    if (Math.abs(diff) > 0.5) {
+      this.doorBlockY -= diff * 0.07;
+      // Move também a física
+      const bx = this._doorBlockBx;
+      const bh = this._doorBlockBh;
+      this.doorBlockPhysRect.setPosition(bx + this._doorBlockBw / 2, this.doorBlockY + bh / 2);
+      this.doorBlockPhysRect.body.reset(bx + this._doorBlockBw / 2, this.doorBlockY + bh / 2);
+      this._redrawDoorBlock();
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  LÓGICA DE INTERAÇÕES
+  // ════════════════════════════════════════════════════════════════════════
+  handleInteract() {
+    if (this.transitioning) return;
+
+    // ── Porta ───────────────────────────────────────────────────────────
+    if (this.isNear(this.doorZone)) {
+      if (!this.button2Pressed || !this.doorBlockOpen) {
+        this.showLockedMessage();
+        return;
+      }
+      this.transitionTo(this.doorDestination);
+      return;
+    }
+
+    // ── Alavanca 1 ──────────────────────────────────────────────────────
+    if (this.isNear(this.lever1Zone)) {
+      this.lever1Active = !this.lever1Active;
+      this._drawLever(this.lever1Gfx, this.lever1X, this.lever1Y, this.lever1Active, 1);
+
+      if (this.lever1Active) {
+        // Liga a subida da água
+        this.waterTargetLevel = this.waterLevelBase;
+      } else {
+        // Para onde está (não desce — só a alavanca 2 baixa)
+        this.waterTargetLevel = this.waterLevel;
+      }
+      return;
+    }
+
+    // ── Alavanca 2 ──────────────────────────────────────────────────────
+    if (this.isNear(this.lever2Zone)) {
+      if (this.lever2Active) return; // só ativa uma vez
+
+      // Verifica se o player está alto o suficiente (água subiu)
+      // A alavanca está em posição alta; se chegou até lá, já está OK
+      this.lever2Active = true;
+      this._drawLever(this.lever2Gfx, this.lever2X, this.lever2Y, true, 2);
+
+      // Baixa a água
+      this.lever1Active = false;
+      this._drawLever(this.lever1Gfx, this.lever1X, this.lever1Y, false, 1);
+      this.waterTargetLevel = this.waterLevelLow;
+
+      // Desliza o bloco de concreto para revelar o botão 1
+      this.slidingBlockTargX = this._btn1Bx + this._btn1Bw * 2 + 20; // desliza p/ direita
+      this._scheduleRevealButton1();
+      return;
+    }
+
+    // ── Botão 1 ──────────────────────────────────────────────────────────
+    if (this.button1Revealed && !this.button1Pressed && this.isNear(this.button1Zone)) {
+      this.button1Pressed = true;
+      this._drawButton(this.btn1Gfx, this._btn1Bx + this._btn1Inner / 2, this._btn1By - 8, true, '#ffaa00');
+
+      // Desliza a pedra para o lado
+      this.rock2TargX = this.btn2X + this.rock2W + 20;
+
+      // Cria o botão 2 após a pedra ter saído
+      this.time.delayedCall(800, () => { this._createButton2(); });
+      return;
+    }
+
+    // ── Botão 2 ──────────────────────────────────────────────────────────
+    if (this.button2Revealed && !this.button2Pressed && this.isNear(this.button2Zone)) {
+      // Verifica se o caixote está em cima do botão 2
+      if (!this._crateOnButton2()) {
+        // Pisca o botão — precisa do caixote
+        this._flashButton2();
+        return;
+      }
+      this._activateButton2();
+      return;
+    }
+  }
+
+  _scheduleRevealButton1() {
+    // O bloco começa a deslizar imediatamente (animado no update)
+    // Depois de ~1.5s revela o botão visualmente
+    this.time.delayedCall(1500, () => {
+      this.button1Revealed = true;
+    });
+  }
+
+  _crateOnButton2() {
+    if (!this.crate || !this.button2Revealed) return false;
+    const dx = Math.abs(this.crate.x - this.btn2X);
+    const dy = Math.abs(this.crate.y - this.btn2Y);
+    return dx < 20 && dy < 30;
+  }
+
+  _flashButton2() {
+    // Pisca o botão 2 para indicar que falta algo
+    let count = 0;
+    const t = this.time.addEvent({
+      delay: 150,
+      repeat: 5,
+      callback: () => {
+        count++;
+        const col = count % 2 === 0 ? '#00aaff' : '#ff4444';
+        this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y, false, col);
+      }
+    });
+  }
+
+  _activateButton2() {
+    this.button2Pressed = true;
+    this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y, true, '#00aaff');
+
+    // Abre o bloco esquerdo da porta (sobe)
+    this.doorBlockOpen = true;
+    this.doorBlockTargetY = this.doorBlockOpenY;
+
+    // Timer: bloco fecha após 8 segundos (tempo desafiador porém possível)
+    this.doorBlockTimer = this.time.delayedCall(8000, () => {
+      this._closeDoorBlock();
+    });
+  }
+
+  _closeDoorBlock() {
+    this.doorBlockOpen = false;
+    this.doorBlockTargetY = this.doorBlockClosedY;
+    this.button2Pressed = false;
+    this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y, false, '#00aaff');
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  SALMÕES (sem alteração)
+  // ════════════════════════════════════════════════════════════════════════
   createSalmons() {
     this.salmonGfx = this.add.graphics().setDepth(4);
     const positions = [
@@ -1915,41 +2607,22 @@ class Phase3Scene extends BaseScene {
       { x: 2700, dir: 1, speed: 55, depth: 30 },
       { x: 2950, dir: -1, speed: 65, depth: 120 },
     ];
-
     positions.forEach(p => {
-      this.salmons.push({
-        x: p.x,
-        y: GAME_H,
-        dir: p.dir,
-        speed: p.speed,
-        depth: p.depth, // profundidade fixa abaixo da superfície da água
-        alpha: 0        // começa invisível — aparece suavemente
-      });
+      this.salmons.push({ x: p.x, y: GAME_H, dir: p.dir, speed: p.speed, depth: p.depth, alpha: 0 });
     });
   }
 
-
-  // Move, desenha e verifica colisão dos salmões a cada frame
   drawSalmons() {
     const g = this.salmonGfx;
     g.clear();
-
-    const waterDepth = GAME_H - this.waterLevel;
-    if (waterDepth < 10) return; // não desenha se a água ainda não apareceu
+    if (GAME_H - this.waterLevel < 10) return;
 
     this.salmons.forEach(s => {
-      // Move horizontalmente
       s.x += s.speed * s.dir * 0.016;
-      // Mantém na profundidade correta dentro da água
       s.y = this.waterLevel + s.depth;
-
-      // Inverte direção nas bordas do cenário
       if (s.x > this.worldWidth - 30 || s.x < 30) s.dir *= -1;
-
-      // Fade in suave ao aparecer
       if (s.alpha < 1) s.alpha = Math.min(1, s.alpha + 0.02);
 
-      // Verifica colisão com o player
       const dx = Math.abs(this.player.x - s.x);
       const dy = Math.abs(this.player.y - s.y);
       if (dx < 20 && dy < 20 && !this.hitCooldown) {
@@ -1958,42 +2631,33 @@ class Phase3Scene extends BaseScene {
         this.time.delayedCall(2000, () => { this.hitCooldown = false; });
       }
 
-      // Desenha o salmão
       const flip = s.dir < 0 ? -1 : 1;
       g.fillStyle(0xff8866, 0.85 * s.alpha);
-      g.fillEllipse(s.x, s.y, 30 * flip, 12); // corpo
+      g.fillEllipse(s.x, s.y, 30 * flip, 12);
       g.fillStyle(0xff6644, 0.85 * s.alpha);
-      g.fillTriangle(s.x - 14 * flip, s.y, s.x - 22 * flip, s.y - 8, s.x - 22 * flip, s.y + 8); // cauda
+      g.fillTriangle(s.x - 14 * flip, s.y, s.x - 22 * flip, s.y - 8, s.x - 22 * flip, s.y + 8);
       g.fillStyle(0xffffff, s.alpha);
-      g.fillCircle(s.x + 10 * flip, s.y - 1, 2); // olho branco
+      g.fillCircle(s.x + 10 * flip, s.y - 1, 2);
       g.fillStyle(0x220000, s.alpha);
-      g.fillCircle(s.x + 10 * flip, s.y - 1, 1); // pupila
+      g.fillCircle(s.x + 10 * flip, s.y - 1, 1);
       g.lineStyle(1, 0xff4444, 0.5 * s.alpha);
       g.beginPath();
       g.moveTo(s.x - 8 * flip, s.y - 4);
       g.lineTo(s.x + 6 * flip, s.y - 4);
-      g.strokePath(); // listra lateral
+      g.strokePath();
     });
   }
 
-  // Cria o objeto gráfico da água (preenchido no updateWater)
-  createWater() {
-    this.waterGfx = this.add.graphics().setDepth(3);
-  }
-
+  // ════════════════════════════════════════════════════════════════════════
+  //  BOLHAS, CORAIS, DECORAÇÃO (sem alteração)
+  // ════════════════════════════════════════════════════════════════════════
   createPlayerBubbles() {
     this.bubbleGfx = this.add.graphics().setDepth(6);
     this.bubbles = [];
   }
 
   updatePlayerBubbles() {
-    // Só cria bolhas quando a cabeça está submersa (player.y - 58 = topo da cabeça)
-    if (this.player.y - 58 < this.waterLevel) {
-      this.bubbleGfx.clear();
-      return;
-    }
-
-    // Cria nova bolha a cada 30 frames
+    if (this.player.y - 58 < this.waterLevel) { this.bubbleGfx.clear(); return; }
     if (Phaser.Math.Between(0, 30) === 0) {
       this.bubbles.push({
         x: this.player.x + Phaser.Math.Between(-8, 8),
@@ -2002,14 +2666,12 @@ class Phase3Scene extends BaseScene {
         speed: Phaser.Math.Between(1, 3) * 0.5
       });
     }
-
-    // Move e desenha cada bolha
     const g = this.bubbleGfx;
     g.clear();
     this.bubbles = this.bubbles.filter(b => b.y > this.waterLevel - 10);
     this.bubbles.forEach(b => {
       b.y -= b.speed;
-      b.x += Math.sin(b.y * 0.1) * 0.3; // movimento ondulante
+      b.x += Math.sin(b.y * 0.1) * 0.3;
       g.fillStyle(0x88ccff, 0.4);
       g.fillCircle(b.x, b.y, b.r);
       g.lineStyle(1, 0xaaddff, 0.3);
@@ -2017,121 +2679,6 @@ class Phase3Scene extends BaseScene {
     });
   }
 
-  // Atualiza a água a cada frame — sobe, desenha e verifica física do player
-  updateWater() {
-    if (!this.gameActive || this.transitioning) return;
-
-    // Velocidade normal nos primeiros 30s, acelera nos últimos 15s
-    if (this.timeLeft > 15) {
-      this.waterRiseSpeed = 0.4;
-    } else {
-      this.waterRiseSpeed = 0.4 + (15 - this.timeLeft) * 0.08;
-    }
-
-    // Para de subir quando chega a 80px do topo (deixa espaço para respirar)
-    if (this.waterLevel > 80) {
-      this.waterLevel -= this.waterRiseSpeed;
-    }
-
-    // Desenha a água
-    const g = this.waterGfx;
-    g.clear();
-    g.fillStyle(0x0044aa, 0.4);
-    g.fillRect(0, this.waterLevel, this.worldWidth, GAME_H + 150 - this.waterLevel);
-    g.fillStyle(0x2266cc, 0.25);
-    g.fillRect(0, this.waterLevel, this.worldWidth, 6); // superfície
-    g.fillStyle(0x44aaff, 0.12);
-    g.fillRect(0, this.waterLevel + 3, this.worldWidth, 3); // brilho da superfície
-
-    if (this.player.y > this.waterLevel + 10 && !this.transitioning) {
-      // Física dentro da água — gravidade reduzida e movimento flutuante
-      this.player.body.setGravityY(-500);
-      this.player.body.setMaxVelocityY(80);
-
-      // Nadar para cima
-      if (this.cursors.up.isDown || this.keys.jump.isDown || this.spaceKey.isDown) {
-        this.player.body.setVelocityY(-500); // aumenta força do pulo
-        this.player.body.setMaxVelocityY(500); // remove limite na hora do pulo
-      }
-      if (this.cursors.down.isDown || this.keys.down.isDown) {
-        this.player.body.setVelocityY(120);
-      }
-
-      // Inicia o timer de afogamento — morre após 15 segundos submerso
-      if (!this.underwaterTimer) {
-        this.underwaterTimer = this.time.delayedCall(15000, () => {
-          if (this.player.y > this.waterLevel) {
-            if (GameState.damage(1)) {
-              this.transitionTo('GameOverScene');
-            } else {
-              this.transitioning = true;
-              this.cameras.main.fadeOut(600, 0, 20, 60);
-              this.time.delayedCall(650, () => { this.scene.restart(); });
-            }
-          }
-          this.underwaterTimer = null;
-        });
-      }
-    } else {
-      // Fora da água — restaura física normal
-      this.player.body.setGravityY(700);
-      this.player.body.setMaxVelocityY(900);
-
-      // Cancela o timer de afogamento ao sair da água
-      if (this.underwaterTimer) {
-        this.underwaterTimer.remove();
-        this.underwaterTimer = null;
-      }
-    }
-  }
-
-  drawPlayer() {
-    const isUnderwater = this.player.y > this.waterLevel;
-
-    if (isUnderwater && this.underwaterTimer) {
-      // Calcula quanto tempo passou submerso (0 = acabou de entrar, 1 = vai morrer)
-      const elapsed = this.underwaterTimer.getElapsed();
-      const progress = Math.min(elapsed / 15000, 1); // 15000ms = 15 segundos
-
-      // Só começa a ficar vermelho nos últimos 5 segundos (progress > 0.66)
-      if (progress > 0.66) {
-        const redProgress = (progress - 0.66) / 0.34; // 0 a 1 nos últimos 5s
-
-        // Interpola entre a cor normal e vermelho
-        const r = Math.floor(0xd0 + (0xff - 0xd0) * redProgress);
-        const g = Math.floor(0xc8 * (1 - redProgress));
-        const b = Math.floor(0xf0 * (1 - redProgress));
-        const color = (r << 16) | (g << 8) | b;
-
-        this.playerGfx.clear();
-        this.drawPlayerColor(color);
-        return;
-      }
-    }
-
-    super.drawPlayer(); // cor normal
-  }
-
-  //player muda de cor quando está prestes a se afogar
-  drawPlayerColor(color) {
-    const x = this.player.x;
-    const y = this.player.y;
-    const g = this.playerGfx;
-
-    g.fillStyle(color);
-    g.fillRect(x - 10, y - 38, 20, 28); // corpo
-    g.fillRect(x - 9, y - 58, 18, 18); // cabeça
-    g.fillStyle(COLORS.playerEye);
-    const eyeX = this.facingLeft ? x - 5 : x + 2;
-    g.fillRect(eyeX, y - 53, 4, 4);     // olho
-    g.fillStyle(color, 0.8);
-    g.fillRect(x - 8, y - 10, 7, 12);   // perna esquerda
-    g.fillRect(x + 1, y - 10, 7, 12);   // perna direita
-    g.fillRect(x - 14, y - 36, 5, 20);  // braço esquerdo
-    g.fillRect(x + 9, y - 36, 5, 20);  // braço direito
-  }
-
-  // Bolhas decorativas espalhadas pelo cenário
   createBubbles() {
     const g = this.add.graphics();
     for (let i = 0; i < 60; i++) {
@@ -2142,7 +2689,6 @@ class Phase3Scene extends BaseScene {
     }
   }
 
-  // Corais decorativos no chão
   createCoral() {
     const g = this.add.graphics();
     const positions = [80, 250, 500, 780, 1050, 1300, 1600, 1900, 2200, 2500, 2800];
@@ -2156,17 +2702,16 @@ class Phase3Scene extends BaseScene {
     });
   }
 
-  // Cria o contador de tempo no topo da tela
+  // ════════════════════════════════════════════════════════════════════════
+  //  TIMER UI
+  // ════════════════════════════════════════════════════════════════════════
   createTimerUI() {
-    this.timerText = this.add.text(GAME_W / 2, 20, '45', {
-      fontSize: '22px',
-      fontFamily: 'Courier New',
-      color: '#55aaff',
-      letterSpacing: 4
+    this.timerText = this.add.text(GAME_W / 2, 20, '60', {
+      fontSize: '22px', fontFamily: 'Courier New',
+      color: '#55aaff', letterSpacing: 4
     }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
   }
 
-  // Contador regressivo — fica vermelho nos últimos 10s e mata ao chegar a 0
   startTimer() {
     this.timerEvent = this.time.addEvent({
       delay: 1000,
@@ -2174,19 +2719,16 @@ class Phase3Scene extends BaseScene {
         if (!this.gameActive || this.transitioning) return;
         this.timeLeft--;
         this.timerText.setText(String(this.timeLeft).padStart(2, '0'));
-        if (this.timeLeft <= 10) this.timerText.setColor('#ff5555'); // fica vermelho
+        if (this.timeLeft <= 10) this.timerText.setColor('#ff5555');
         if (this.timeLeft <= 0) {
           this.gameActive = false;
           if (GameState.damage(1)) {
             this.transitionTo('GameOverScene');
           } else {
-            // Animação de inundação antes de reiniciar
             const flood = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0044aa, 0)
               .setScrollFactor(0).setDepth(30);
             this.tweens.add({
-              targets: flood,
-              alpha: 0.7,
-              duration: 1000,
+              targets: flood, alpha: 0.7, duration: 1000,
               onComplete: () => {
                 this.cameras.main.fadeOut(500, 0, 20, 60);
                 this.time.delayedCall(550, () => { this.scene.restart(); });
@@ -2195,27 +2737,55 @@ class Phase3Scene extends BaseScene {
           }
         }
       },
-      repeat: 44 // repete 44 vezes (45 segundos no total)
+      repeat: 59
     });
   }
 
-  // Verifica interação com a porta de saída
-  handleInteract() {
-    if (this.transitioning) return;
-    if (this.isNear(this.doorZone)) {
-      if (!this.keyFound) {
-        this.showLockedMessage(); // aviso de porta trancada
+  // ════════════════════════════════════════════════════════════════════════
+  //  PLAYER COM COR DE AFOGAMENTO
+  // ════════════════════════════════════════════════════════════════════════
+  drawPlayer() {
+    const isUnderwater = this.player.y > this.waterLevel;
+    if (isUnderwater && this.underwaterTimer) {
+      const elapsed = this.underwaterTimer.getElapsed();
+      const progress = Math.min(elapsed / 15000, 1);
+      if (progress > 0.66) {
+        const redProgress = (progress - 0.66) / 0.34;
+        const r = Math.floor(0xd0 + (0xff - 0xd0) * redProgress);
+        const gv = Math.floor(0xc8 * (1 - redProgress));
+        const b = Math.floor(0xf0 * (1 - redProgress));
+        this.playerGfx.clear();
+        this.drawPlayerColor((r << 16) | (gv << 8) | b);
         return;
       }
-      this.transitionTo(this.doorDestination);
     }
+    super.drawPlayer();
   }
 
+  drawPlayerColor(color) {
+    const x = this.player.x, y = this.player.y;
+    const g = this.playerGfx;
+    g.fillStyle(color);
+    g.fillRect(x - 10, y - 38, 20, 28);
+    g.fillRect(x - 9, y - 58, 18, 18);
+    g.fillStyle(COLORS.playerEye);
+    const eyeX = this.facingLeft ? x - 5 : x + 2;
+    g.fillRect(eyeX, y - 53, 4, 4);
+    g.fillStyle(color, 0.8);
+    g.fillRect(x - 8, y - 10, 7, 12);
+    g.fillRect(x + 1, y - 10, 7, 12);
+    g.fillRect(x - 14, y - 36, 5, 20);
+    g.fillRect(x + 9, y - 36, 5, 20);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  UPDATE PRINCIPAL
+  // ════════════════════════════════════════════════════════════════════════
   update() {
     super.update();
     if (this.transitioning) return;
 
-    // Câmera acompanha verticalmente apenas após o desnível
+    // Câmera
     if (this.player.x > this.stepXRef) {
       this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_H + 200);
     } else {
@@ -2225,16 +2795,53 @@ class Phase3Scene extends BaseScene {
     this.updateWater();
     this.drawSalmons();
     this.updatePlayerBubbles();
+    this._updateSlidingBlock();
+    this._updateRock2();
+    this._updateDoorBlock();
+    this._drawCrate();
 
-    // Prompt de interação com a porta
-    if (this.isNear(this.doorZone) && !this.activePrompt) {
-      this.createPrompt(this.keyFound ? TEXTS.ENTER : '🔒 Trancada', -70, this.keyFound ? '#ffdd44' : '#ff6666');
-    } else if (!this.isNear(this.doorZone) && this.activePrompt) {
+    // ── Prompts de interação ────────────────────────────────────────────
+    let promptText = null;
+    let promptColor = '#ffdd44';
+    let promptZone = null;
+
+    if (this.isNear(this.doorZone)) {
+      const open = this.button2Pressed && this.doorBlockOpen;
+      promptText = open ? TEXTS.ENTER : '🔒';
+      promptColor = open ? '#ffdd44' : '#ff6666';
+      promptZone = this.doorZone;
+    } else if (this.isNear(this.lever1Zone)) {
+      promptText = this.lever1Active ? '⬇ Alavanca' : '⬆ Alavanca';
+      promptColor = '#44ffaa';
+      promptZone = this.lever1Zone;
+    } else if (this.isNear(this.lever2Zone)) {
+      promptText = '⬇ Alavanca';
+      promptColor = '#44ffaa';
+      promptZone = this.lever2Zone;
+    } else if (this.button1Revealed && !this.button1Pressed && this.isNear(this.button1Zone)) {
+      promptText = '● Botão';
+      promptColor = '#ffaa00';
+      promptZone = this.button1Zone;
+    } else if (this.button2Revealed && !this.button2Pressed && this.isNear(this.button2Zone)) {
+      promptText = '● Botão';
+      promptColor = '#00aaff';
+      promptZone = this.button2Zone;
+    }
+
+    if (promptText && !this.activePrompt) {
+      this.createPrompt(promptText, -70, promptColor);
+    } else if (!promptText && this.activePrompt) {
       this.activePrompt.destroy();
       this.activePrompt = null;
+    } else if (promptText && this.activePrompt) {
+      // Atualiza texto do prompt se mudou
+      if (this.activePrompt.text !== promptText) {
+        this.activePrompt.destroy();
+        this.activePrompt = null;
+        this.createPrompt(promptText, -70, promptColor);
+      }
     }
   }
-
 }
 
 // =============================================
@@ -2623,15 +3230,15 @@ class Phase5Scene extends BaseScene {
     this.showPhaseTitle(TEXTS.PHASE_5);
 
     // ── ESTADO ─────────────────────────────────────────────
-    this.keyFound          = false;
-    this.screechDerrotado  = false;
-    this.portaAberta       = false;
-    this.tempoPassado      = 0;
-    this.tempoLimite       = 30000; // 1º ataque em 30s
-    this.cicloAtaque       = 0;     // conta quantos ataques já ocorreram
-    this.punicaoAplicada   = false;
-    this.bauAberto         = false;
-    this.screechAtacando   = false;
+    this.keyFound = false;
+    this.screechDerrotado = false;
+    this.portaAberta = false;
+    this.tempoPassado = 0;
+    this.tempoLimite = 30000; // 1º ataque em 30s
+    this.cicloAtaque = 0;     // conta quantos ataques já ocorreram
+    this.punicaoAplicada = false;
+    this.bauAberto = false;
+    this.screechAtacando = false;
 
     // ── CENÁRIO ────────────────────────────────────────────
     this.platforms = this.physics.add.staticGroup();
@@ -2650,7 +3257,7 @@ class Phase5Scene extends BaseScene {
     this.escuridaoRect.fillRect(0, 0, GAME_W, GAME_H);
 
     // lantGfx recebe DOIS círculos: mouse + player
-    this.lantGfx  = this.add.graphics().setScrollFactor(0).setDepth(0);
+    this.lantGfx = this.add.graphics().setScrollFactor(0).setDepth(0);
     this.lantMask = this.lantGfx.createGeometryMask();
     this.lantMask.setInvertAlpha(true);
     this.escuridaoRect.setMask(this.lantMask);
@@ -2667,14 +3274,14 @@ class Phase5Scene extends BaseScene {
 
     // ── PSST após 7s ───────────────────────────────────────
     this.time.delayedCall(7000, () => {
-      try { this.sound.play('psst', { volume: 1.0 }); } catch(e) {}
+      try { this.sound.play('psst', { volume: 1.0 }); } catch (e) { }
     });
   }
 
   // ── CENÁRIO DA ACADEMIA ───────────────────────────────────
   buildAcademia() {
-    const g  = this.add.graphics().setDepth(1);
-    const W  = this.worldWidth;
+    const g = this.add.graphics().setDepth(1);
+    const W = this.worldWidth;
     const fy = this.floorY;
 
     // Fundo
@@ -2711,23 +3318,23 @@ class Phase5Scene extends BaseScene {
 
     // Bancos como plataformas (mais deles, mais distribuídos)
     [
-      { x: 200,  y: fy - 60,  w: 100 },
-      { x: 520,  y: fy - 80,  w: 120 },
-      { x: 820,  y: fy - 55,  w: 100 },
-      { x: 1150, y: fy - 75,  w: 110 },
-      { x: 1460, y: fy - 60,  w: 100 },
-      { x: 1750, y: fy - 80,  w: 120 },
-      { x: 2080, y: fy - 60,  w: 100 },
-      { x: 2380, y: fy - 75,  w: 110 },
-      { x: 2700, y: fy - 55,  w: 100 },
-      { x: 3000, y: fy - 70,  w: 120 },
+      { x: 200, y: fy - 60, w: 100 },
+      { x: 520, y: fy - 80, w: 120 },
+      { x: 820, y: fy - 55, w: 100 },
+      { x: 1150, y: fy - 75, w: 110 },
+      { x: 1460, y: fy - 60, w: 100 },
+      { x: 1750, y: fy - 80, w: 120 },
+      { x: 2080, y: fy - 60, w: 100 },
+      { x: 2380, y: fy - 75, w: 110 },
+      { x: 2700, y: fy - 55, w: 100 },
+      { x: 3000, y: fy - 70, w: 120 },
     ].forEach(b => {
       g.fillStyle(0x1a1228);
       g.fillRect(b.x, b.y, b.w, 18);
       g.fillStyle(0x2a1a3a);
       g.fillRect(b.x, b.y, b.w, 4);
       g.fillStyle(0x111118);
-      g.fillRect(b.x + 8,        b.y + 18, 10, 42);
+      g.fillRect(b.x + 8, b.y + 18, 10, 42);
       g.fillRect(b.x + b.w - 18, b.y + 18, 10, 42);
       const plat = this.add.rectangle(b.x + b.w / 2, b.y + 9, b.w, 18).setVisible(false);
       this.physics.add.existing(plat, true);
@@ -2779,11 +3386,11 @@ class Phase5Scene extends BaseScene {
 
   _halteres(g, x, fy) {
     g.fillStyle(0x222233);
-    g.fillRect(x,      fy - 18, 12, 18);
+    g.fillRect(x, fy - 18, 12, 18);
     g.fillRect(x + 24, fy - 18, 12, 18);
     g.fillRect(x + 12, fy - 14, 12, 10);
     g.fillStyle(0x333344);
-    g.fillRect(x,      fy - 18, 12, 4);
+    g.fillRect(x, fy - 18, 12, 4);
     g.fillRect(x + 24, fy - 18, 12, 4);
   }
 
@@ -2819,10 +3426,10 @@ class Phase5Scene extends BaseScene {
 
     // Faixas douradas
     g.fillStyle(0xddaa00);
-    g.fillRect(bx + 19, by,      6,  52);
-    g.fillRect(bx,      by + 18, 44, 5);
-    g.fillRect(bx,      by,      6,  52);
-    g.fillRect(bx + 38, by,      6,  52);
+    g.fillRect(bx + 19, by, 6, 52);
+    g.fillRect(bx, by + 18, 44, 5);
+    g.fillRect(bx, by, 6, 52);
+    g.fillRect(bx + 38, by, 6, 52);
 
     // Cadeado
     g.fillStyle(0xffcc00);
@@ -2834,7 +3441,7 @@ class Phase5Scene extends BaseScene {
 
     // Rebites
     g.fillStyle(0xffdd44);
-    [[bx+3,by+3],[bx+3,by+45],[bx+41,by+3],[bx+41,by+45]].forEach(([rx,ry]) => {
+    [[bx + 3, by + 3], [bx + 3, by + 45], [bx + 41, by + 3], [bx + 41, by + 45]].forEach(([rx, ry]) => {
       g.fillCircle(rx, ry, 3);
     });
 
@@ -2847,73 +3454,75 @@ class Phase5Scene extends BaseScene {
     });
 
     // Partículas douradas
-    [0,1,2].forEach(i => {
-      const spark = this.add.rectangle(bx + 5 + i*17, by - 8 - i*4, 3, 3, 0xffdd44).setDepth(3);
-      this.tweens.add({ targets: spark, y: spark.y - 14, alpha: 0,
-        duration: 800 + i*200, repeat: -1, delay: i*300 });
+    [0, 1, 2].forEach(i => {
+      const spark = this.add.rectangle(bx + 5 + i * 17, by - 8 - i * 4, 3, 3, 0xffdd44).setDepth(3);
+      this.tweens.add({
+        targets: spark, y: spark.y - 14, alpha: 0,
+        duration: 800 + i * 200, repeat: -1, delay: i * 300
+      });
     });
 
     this.bauZone = this.add.zone(bx + 22, by + 26, 60, 60);
     this.physics.add.existing(this.bauZone, true);
     this.bauGfx = g;
-    this.bauX   = bx;
-    this.bauY   = by;
+    this.bauX = bx;
+    this.bauY = by;
   }
 
- // Na Phase5Scene.js, no método abrirBau():
+  // Na Phase5Scene.js, no método abrirBau():
 
-abrirBau() {
-  if (this.bauAberto) return;
-  
-  console.log("ABRINDO BAÚ!");
-  this.bauAberto = true;
+  abrirBau() {
+    if (this.bauAberto) return;
 
-  // Redesenhar baú aberto
-  const g = this.bauGfx, bx = this.bauX, by = this.bauY, fy = this.floorY;
-  g.clear();
-  g.fillStyle(0x000000, 0.4);
-  g.fillEllipse(bx + 22, fy - 4, 64, 12);
-  g.fillStyle(0x1a3a8a);
-  g.fillRect(bx, by + 20, 44, 32);
-  g.fillStyle(0xddaa00);
-  g.fillRect(bx, by + 18, 44, 5);
-  g.fillRect(bx,      by + 18, 6, 34);
-  g.fillRect(bx + 38, by + 18, 6, 34);
-  g.fillRect(bx + 19, by + 18, 6, 34);
-  g.fillStyle(0x2255bb);
-  g.fillRect(bx - 4, by - 30, 52, 18);
-  g.fillStyle(0x2a66cc);
-  g.fillEllipse(bx + 22, by - 30, 52, 10);
-  g.fillStyle(0xddaa00);
-  g.fillRect(bx - 4,  by - 30, 6, 18);
-  g.fillRect(bx + 42, by - 30, 6, 18);
-  g.fillStyle(0x8855aa, 0.5);
-  g.fillRect(bx + 3, by + 22, 38, 26);
+    console.log("ABRINDO BAÚ!");
+    this.bauAberto = true;
 
-  // 🔥 CRIAR A CHAVE VISUAL DENTRO DO BAÚ 🔥
-  // Chamar o método da BaseScene para criar a chave
-  this.createHiddenKey(bx + 22, by + 35);
-  
-  // A chave agora aparece e o jogador precisa passar por cima para pegar
-  // (o método createHiddenKey já configura tudo: visual, brilho, zona de coleta)
-  
-  // Mensagem indicando que a chave apareceu
-  const msg = this.add.text(GAME_W / 2, GAME_H / 2 - 40, TEXTS.KEY_FOUND, {
-    fontSize: '18px',
-    fontFamily: 'Courier New',
-    color: '#ffdd44',
-    stroke: '#000000',
-    strokeThickness: 3
-  }).setOrigin(0.5).setScrollFactor(0).setDepth(30);
-  
-  this.tweens.add({
-    targets: msg,
-    y: msg.y - 30,
-    alpha: 0,
-    duration: 2000,
-    onComplete: () => msg.destroy()
-  });
-}
+    // Redesenhar baú aberto
+    const g = this.bauGfx, bx = this.bauX, by = this.bauY, fy = this.floorY;
+    g.clear();
+    g.fillStyle(0x000000, 0.4);
+    g.fillEllipse(bx + 22, fy - 4, 64, 12);
+    g.fillStyle(0x1a3a8a);
+    g.fillRect(bx, by + 20, 44, 32);
+    g.fillStyle(0xddaa00);
+    g.fillRect(bx, by + 18, 44, 5);
+    g.fillRect(bx, by + 18, 6, 34);
+    g.fillRect(bx + 38, by + 18, 6, 34);
+    g.fillRect(bx + 19, by + 18, 6, 34);
+    g.fillStyle(0x2255bb);
+    g.fillRect(bx - 4, by - 30, 52, 18);
+    g.fillStyle(0x2a66cc);
+    g.fillEllipse(bx + 22, by - 30, 52, 10);
+    g.fillStyle(0xddaa00);
+    g.fillRect(bx - 4, by - 30, 6, 18);
+    g.fillRect(bx + 42, by - 30, 6, 18);
+    g.fillStyle(0x8855aa, 0.5);
+    g.fillRect(bx + 3, by + 22, 38, 26);
+
+    // 🔥 CRIAR A CHAVE VISUAL DENTRO DO BAÚ 🔥
+    // Chamar o método da BaseScene para criar a chave
+    this.createHiddenKey(bx + 22, by + 35);
+
+    // A chave agora aparece e o jogador precisa passar por cima para pegar
+    // (o método createHiddenKey já configura tudo: visual, brilho, zona de coleta)
+
+    // Mensagem indicando que a chave apareceu
+    const msg = this.add.text(GAME_W / 2, GAME_H / 2 - 40, TEXTS.KEY_FOUND, {
+      fontSize: '18px',
+      fontFamily: 'Courier New',
+      color: '#ffdd44',
+      stroke: '#000000',
+      strokeThickness: 3
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(30);
+
+    this.tweens.add({
+      targets: msg,
+      y: msg.y - 30,
+      alpha: 0,
+      duration: 2000,
+      onComplete: () => msg.destroy()
+    });
+  }
   // ── SCREECH ───────────────────────────────────────────────
   criarScreech() {
     const x = Phaser.Math.Between(GAME_W * 0.6, this.worldWidth * 0.85);
@@ -2924,19 +3533,19 @@ abrirBau() {
 
     const patas = this.add.graphics();
     patas.lineStyle(1, 0x660000, 0.8);
-    [[-18,-8],[-22,0],[-18,8],[18,-8],[22,0],[18,8]].forEach(([px,py]) => {
-      patas.beginPath(); patas.moveTo(0,0); patas.lineTo(px,py); patas.strokePath();
+    [[-18, -8], [-22, 0], [-18, 8], [18, -8], [22, 0], [18, 8]].forEach(([px, py]) => {
+      patas.beginPath(); patas.moveTo(0, 0); patas.lineTo(px, py); patas.strokePath();
     });
 
     const olhoE = this.add.ellipse(-6, -2, 7, 9, 0xff0000);
-    const olhoD = this.add.ellipse( 6, -2, 7, 9, 0xff0000);
-    const pupE  = this.add.ellipse(-6, -2, 3, 5, 0x220000);
-    const pupD  = this.add.ellipse( 6, -2, 3, 5, 0x220000);
+    const olhoD = this.add.ellipse(6, -2, 7, 9, 0xff0000);
+    const pupE = this.add.ellipse(-6, -2, 3, 5, 0x220000);
+    const pupD = this.add.ellipse(6, -2, 3, 5, 0x220000);
 
     container.add([patas, corpo, olhoE, olhoD, pupE, pupD]);
 
     container.vx = Phaser.Math.Between(18, 32) * (Math.random() < 0.5 ? 1 : -1);
-    container.vy = Phaser.Math.Between(5, 12)  * (Math.random() < 0.5 ? 1 : -1);
+    container.vy = Phaser.Math.Between(5, 12) * (Math.random() < 0.5 ? 1 : -1);
 
     this.tetoTween = this.tweens.add({
       targets: container, y: 52,
@@ -2993,8 +3602,8 @@ abrirBau() {
     const dt = delta / 1000;
 
     if (this.screechAtacando) {
-      const dx   = this.player.x - this.screechObj.x;
-      const dy   = this.player.y - this.screechObj.y;
+      const dx = this.player.x - this.screechObj.x;
+      const dy = this.player.y - this.screechObj.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist > 20) {
@@ -3033,7 +3642,7 @@ abrirBau() {
       this.screechAtacando = true;
 
       // Som + flash vermelho imediato ao iniciar ataque
-      try { this.sound.play('screech_jumpscare', { volume: 1.5 }); } catch(e) {}
+      try { this.sound.play('screech_jumpscare', { volume: 1.5 }); } catch (e) { }
 
       const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff0000, 0.55)
         .setScrollFactor(0).setDepth(60);
@@ -3067,7 +3676,7 @@ abrirBau() {
 
       // Próximo timer: 30s → 22s → 16s → 12s (mínimo)
       const limites = [30000, 22000, 16000, 12000];
-      this.tempoLimite  = limites[Math.min(this.cicloAtaque, limites.length - 1)];
+      this.tempoLimite = limites[Math.min(this.cicloAtaque, limites.length - 1)];
       this.tempoPassado = 0;
       this.punicaoAplicada = false;
     });
@@ -3077,12 +3686,12 @@ abrirBau() {
   verificarLanterna() {
     if (this.screechDerrotado) return;
 
-    const cam     = this.cameras.main;
+    const cam = this.cameras.main;
     const screenX = this.screechObj.x - cam.scrollX;
     const screenY = this.screechObj.y - cam.scrollY;
-    const dx      = this.input.x - screenX;
-    const dy      = this.input.y - screenY;
-    const dist    = Math.sqrt(dx * dx + dy * dy);
+    const dx = this.input.x - screenX;
+    const dy = this.input.y - screenY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist < 90 + 35) {
       this.derrotarScreech();
@@ -3092,7 +3701,7 @@ abrirBau() {
   derrotarScreech() {
     if (this.screechDerrotado) return;
     this.screechDerrotado = true;
-    this.screechAtacando  = false;
+    this.screechAtacando = false;
 
     if (this.tetoTween) this.tetoTween.stop();
 
@@ -3125,7 +3734,7 @@ abrirBau() {
     this.lantGfx.fillCircle(this.input.x, this.input.y, 95);
 
     // Luz ao redor do player — raio 70 (pequena penumbra)
-    this.lantGfx.fillCircle(px, py-20, 70);
+    this.lantGfx.fillCircle(px, py - 20, 70);
   }
 
   mostrarAviso(texto, duracao) {
