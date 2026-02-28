@@ -497,7 +497,7 @@ class BootScene extends Phaser.Scene {
 
     this.input.keyboard.once('keydown', () => {
       this.cameras.main.fadeOut(600, 0, 0, 0);
-      this.time.delayedCall(620, () => this.scene.start('Phase2Scene'));
+      this.time.delayedCall(620, () => this.scene.start('Phase5Scene'));
     });
   }
 
@@ -718,21 +718,20 @@ class Phase1Scene extends BaseScene {
 class Phase2Scene extends BaseScene {
   constructor() {
     super('Phase2Scene');
-    this.worldWidth = 4200; // 3 paredes de 1400 cada
+    this.worldWidth = 5600;
     this.s = 1.5;
   }
 
   init() {
     super.init();
-    this.worldWidth = 4200;
+    this.worldWidth = 5600;
     this.floorY = GAME_H - 30;
     this.passingThrough = false;
-    this.currentWall = 1; // parede atual: 1, 2 ou 3
+    this.currentWall = 1;
   }
 
   create() {
     super.create();
-    this.player.body.setSize(36, 60);
     this.player.setPosition(80, this.floorY - 50);
     GameState.door = 2;
     GameState.updateUI();
@@ -751,33 +750,62 @@ class Phase2Scene extends BaseScene {
     this.hitCooldown = false;
     this.inWardrobe = false;
     this.keyFound = false;
+    this.keyZone = null;
+    this.keyGfx = null;
+    this.keyGlow = null;
+    this.keyWorldX = null;
+    this.keyWorldY = null;
 
-    // ── As 3 paredes — cada uma ocupa exatamente 1400px ──
-    this.buildKitchen();    // X: 0    → 1400
-    this.buildStoveWall();  // X: 1400 → 2800
-    this.buildPantryWall(); // X: 2800 → 4200
+    if (this.currentWall === 4) {
+      this.player.body.setSize(24, 40);
+    } else {
+      this.player.body.setSize(36, 60);
+    }
 
-    // Porta de fase no FINAL da parede 3
-    this.createDoor(4050, '002', 'Phase3Scene');
+    this.buildKitchen();
+    this.buildStoveWall();
+    this.buildPantryWall();
+    this.buildMansionFacade();
 
-    // ── Zonas de transição nas bordas de cada parede ──
-    // Parede 1 → 2
+    // Zonas de transição
     this.zoneW1toW2 = this.add.zone(1390, this.floorY - 150, 10, 300);
     this.physics.add.existing(this.zoneW1toW2, true);
-    // Parede 2 → 1
     this.zoneW2toW1 = this.add.zone(1410, this.floorY - 150, 10, 300);
     this.physics.add.existing(this.zoneW2toW1, true);
-    // Parede 2 → 3
     this.zoneW2toW3 = this.add.zone(2790, this.floorY - 150, 10, 300);
     this.physics.add.existing(this.zoneW2toW3, true);
-    // Parede 3 → 2
     this.zoneW3toW2 = this.add.zone(2810, this.floorY - 150, 10, 300);
     this.physics.add.existing(this.zoneW3toW2, true);
+    this.zoneW3toW4 = this.add.zone(4160, this.floorY - 150, 10, 300);
+    this.physics.add.existing(this.zoneW3toW4, true);
+    this.zoneW4toW3 = this.add.zone(4240, this.floorY - 150, 10, 300);
+    this.physics.add.existing(this.zoneW4toW3, true);
 
     this.createJeremiah();
 
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.collider(this.jeremiah, this.platforms);
+
+    // Sorteia qual gaveta esconde a chave
+    this.assignKeyToRandomDrawer();
+  }
+
+  // ─── SORTEIA A GAVETA COM A CHAVE (só wall 2 e 3) ─
+  assignKeyToRandomDrawer() {
+    const eligible = this.drawers.filter(d => d.wall === 2 || d.wall === 3);
+    if (eligible.length === 0) return;
+    const idx = Phaser.Math.Between(0, eligible.length - 1);
+    eligible[idx].hasKey = true;
+  }
+
+  // ─── COLETA A CHAVE ───────────────────────────────
+  collectKey() {
+    if (this.keyFound) return;
+    this.keyWorldX = null;
+    this.keyWorldY = null;
+    super.collectKey(); // destrói keyGfx e keyGlow, marca keyFound, toca som, mostra mensagem
+    this.keyGfx = null;
+    this.keyGlow = null;
   }
 
   drawPlayer() {
@@ -785,7 +813,9 @@ class Phase2Scene extends BaseScene {
     const y = this.player.y;
     const g = this.playerGfx;
     g.clear();
-    const s = 1.5;
+
+    const s = this.currentWall <= 3 ? 1.5 : 1.0;
+
     this.playerShadow.clear();
     this.playerShadow.fillStyle(0x000000, 0.25);
     this.playerShadow.fillEllipse(x, this.floorY - 2, 50 * s, 14 * s);
@@ -808,13 +838,11 @@ class Phase2Scene extends BaseScene {
     const ch = 75;
     const topMargin = 55;
 
-    // PAREDE
     g.fillStyle(0xadebb3);
     g.fillRect(0, 0, 1400, GAME_H);
     g.fillStyle(0x081828, 0.55);
     g.fillRect(0, 0, 1400, GAME_H);
 
-    // TETO
     g.fillStyle(0xc8d4dc);
     g.fillRect(0, 0, 1400, 22);
     [120, 340, 560, 780, 1000, 1220].forEach(x => {
@@ -822,7 +850,6 @@ class Phase2Scene extends BaseScene {
       g.fillRect(x, 0, 20, 22);
     });
 
-    // CHÃO
     g.fillStyle(0x0a0806);
     g.fillRect(0, this.floorY, 1400, 8);
     g.fillStyle(0x060504, 0.9);
@@ -831,7 +858,6 @@ class Phase2Scene extends BaseScene {
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
-    // ARMÁRIO ALTO ESQUERDO
     g.fillStyle(0xd8e0e8);
     g.fillRect(0, 22, 140, this.floorY - 22);
     g.lineStyle(1, 0xc0ccd4);
@@ -848,7 +874,6 @@ class Phase2Scene extends BaseScene {
     g.fillStyle(0x081828, 0.2);
     g.fillRect(135, 22, 8, this.floorY - 22);
 
-    // ARMÁRIO AÉREO ESQUERDO
     const aereoY = topMargin + 35;
     const aereoH = 210;
     g.fillStyle(0xd8e0e8);
@@ -892,7 +917,6 @@ class Phase2Scene extends BaseScene {
     g.fillRect(142, aereoY + aereoH, 5, 26);
     g.fillRect(517, aereoY + aereoH, 5, 26);
 
-    // JANELA CENTRAL
     const winX = 560, winY = topMargin + 5, winW = 240, winH = 275;
     g.fillStyle(0x040b18);
     g.fillRect(winX, winY, winW, winH);
@@ -935,7 +959,6 @@ class Phase2Scene extends BaseScene {
     g.fillStyle(0x8ab0d0, 0.03);
     g.fillTriangle(winX + 40, winY + winH + 20, winX + winW - 40, winY + winH + 20, winX + winW / 2, this.floorY);
 
-    // ARMÁRIO AÉREO DIREITO
     const shelf1X = 834, aereoHDir = 210, aereoYDir = aereoY, shelf1W = 160;
     const trapH = 20, bodyY = aereoYDir + trapH;
     g.fillStyle(0xd8e0e8);
@@ -979,7 +1002,6 @@ class Phase2Scene extends BaseScene {
     g.fillRect(shelf1X, bodyY + aereoHDir, 5, 26);
     g.fillRect(shelf1X + shelf1W - 5, bodyY + aereoHDir, 5, 26);
 
-    // BANCADA
     g.fillStyle(0xa8b4c0);
     g.fillRect(140, this.floorY - ch, 870, ch);
     g.fillStyle(0xbcc8d4);
@@ -987,7 +1009,7 @@ class Phase2Scene extends BaseScene {
     g.fillStyle(0x060e18, 0.3);
     g.fillRect(140, this.floorY - ch + 3, 870, 5);
 
-    // GAVETAS INTERATIVAS
+    // GAVETAS INTERATIVAS — parede 1
     [155, 248, 342, 436].forEach((x, i) => {
       g.fillStyle(0xd8e0e8);
       g.fillRect(x, this.floorY - ch + 5, 85, ch - 8);
@@ -1000,12 +1022,19 @@ class Phase2Scene extends BaseScene {
       g.fillStyle(0x9898a8);
       g.fillRect(x + 26, this.floorY - ch + 18, 34, 4);
       g.fillRect(x + 26, this.floorY - ch + 38, 34, 4);
-      const zone = this.add.zone(x + 42, this.floorY - ch / 2, 85, ch);
+
+      const dx = x;
+      const dy = this.floorY - ch + 5;
+      const dw = 85;
+      const dh = ch - 8;
+      const zone = this.add.zone(x + 42, dy + dh / 2, dw, dh);
       this.physics.add.existing(zone, true);
-      this.drawers.push({ zone, hasKey: i === 2, searched: false });
+      this.drawers.push({
+        zone, hasKey: false, searched: false, wall: 1,
+        dx, dy, dw, dh
+      });
     });
 
-    // ARMÁRIOS BAIXOS
     [540, 640, 740, 840, 940].forEach(x => {
       g.fillStyle(0xd8e0e8);
       g.fillRect(x + 3, this.floorY - ch + 5, 88, ch - 8);
@@ -1015,7 +1044,6 @@ class Phase2Scene extends BaseScene {
       g.fillRect(x + 36, this.floorY - ch + 26, 22, 4);
     });
 
-    // PIA / TORNEIRA
     const tornX = winX + winW / 2, tornY = this.floorY - ch - 2;
     g.fillStyle(0x9aaabb);
     g.fillRect(tornX - 14, tornY - 8, 28, 8);
@@ -1025,7 +1053,6 @@ class Phase2Scene extends BaseScene {
     g.fillStyle(0x7a8a9a);
     g.fillRect(tornX - 18, tornY - 28, 14, 4);
 
-    // LUMINÁRIAS
     [240, 480, 720].forEach(x => {
       g.fillStyle(0x788898);
       g.fillRect(x, 22, 3, topMargin - 22);
@@ -1037,7 +1064,6 @@ class Phase2Scene extends BaseScene {
       g.fillTriangle(x - 60, topMargin + 26, x + 62, topMargin + 26, x + 1, this.floorY);
     });
 
-    // MOLDURA DE PASSAGEM (visual — a zona real é a zoneW1toW2)
     const passX = 1080, passW = 320, pillarW = 18;
     g.fillStyle(0xd8e0e8);
     g.fillRect(passX, topMargin, pillarW, this.floorY - topMargin);
@@ -1052,30 +1078,27 @@ class Phase2Scene extends BaseScene {
   // ─── PAREDE 2: FOGÃO  (X: 1400 → 2800) ───────────
   buildStoveWall() {
     const g = this.add.graphics().setDepth(1);
-    const gFront = this.add.graphics().setDepth(2); // na frente do g normal
+    const gFront = this.add.graphics().setDepth(2);
     const floorY = this.floorY;
     const topMargin = 55;
     const ch = 75;
-    const counterTop = floorY - ch;   // 395
+    const counterTop = floorY - ch;
 
     const ox = 1400;
     const wallW = 1400;
-    const centerX = ox + wallW / 2;   // 2100
+    const centerX = ox + wallW / 2;
 
-    // ── PAREDE ────────────────────────────────────────
     g.fillStyle(0x8fa89a);
     g.fillRect(ox, 0, wallW, floorY);
     g.fillStyle(0x081828, 0.28);
     g.fillRect(ox, 0, wallW, floorY);
 
-    // ── TETO ──────────────────────────────────────────
     g.fillStyle(0xd8e0e4);
     g.fillRect(ox, 0, wallW, 22);
     [ox + 120, ox + 340, ox + 560, ox + 780, ox + 1000, ox + 1220].forEach(x => {
       g.fillStyle(0xc8d0d4); g.fillRect(x, 0, 20, 22);
     });
 
-    // ── CHÃO ──────────────────────────────────────────
     g.fillStyle(0x3a2010);
     g.fillRect(ox, floorY, wallW, 8);
     g.fillStyle(0x2a1a0e, 0.9);
@@ -1084,9 +1107,6 @@ class Phase2Scene extends BaseScene {
     this.physics.add.existing(floor2, true);
     this.platforms.add(floor2);
 
-    // ══════════════════════════════════════════════════
-    // MEDIDAS
-    // ══════════════════════════════════════════════════
     const stoveW = 260;
     const stoveX = centerX - stoveW / 2;
     const hoodW = 360;
@@ -1098,25 +1118,19 @@ class Phase2Scene extends BaseScene {
     const hoodBotX = centerX - hoodBotW / 2;
     const hoodBotY = hoodTopY + hoodBodyH + hoodTrapH;
 
-    // Armários ao lado do hood
     const sideAereoW = 110;
     const sideAereoLX = hoodX - sideAereoW;
     const sideAereoRX = hoodX + hoodW;
 
-    // Passagem 
     const passW = 170;
     const passLX = sideAereoLX - passW;
     const passRX = sideAereoRX + sideAereoW;
 
-    // Armários externos altos
     const extLX = ox;
     const extLW = passLX - ox;
     const extRX = passRX + passW;
     const extRW = ox + wallW - extRX;
 
-    // ══════════════════════════════════════════════════
-    // ARMÁRIOS EXTERNOS ALTOS — 2 portas grandes empilhadas
-    // ══════════════════════════════════════════════════
     [
       { ex: extLX, ew: extLW, mirror: false },
       { ex: extRX, ew: extRW, mirror: true }
@@ -1124,13 +1138,11 @@ class Phase2Scene extends BaseScene {
       if (ew <= 0) return;
       const cabinetH = floorY - topMargin;
 
-      // Corpo do armário
       g.fillStyle(0xeae6de);
       g.fillRect(ex, topMargin, ew, cabinetH);
       g.lineStyle(3, 0xc8c4b8);
       g.strokeRect(ex + 4, topMargin + 4, ew - 8, cabinetH - 8);
 
-      // Faixa decorativa do topo (cornice)
       g.fillStyle(0xeae6de);
       g.fillRect(ex, topMargin, ew, 18);
       g.lineStyle(2, 0xc8c4b8);
@@ -1138,12 +1150,10 @@ class Phase2Scene extends BaseScene {
       g.fillStyle(0xe0dcd4);
       g.fillRect(ex + 2, topMargin + 18, ew - 4, 4);
 
-      // 2 portas grandes empilhadas
       const doorW = ew - 14;
       const doorX = ex + 7;
       const halfH = (cabinetH - 30) / 2;
 
-      // Porta superior
       const door1Y = topMargin + 22;
       g.fillStyle(0xe8e4dc);
       g.fillRect(doorX, door1Y, doorW, halfH);
@@ -1152,7 +1162,6 @@ class Phase2Scene extends BaseScene {
       g.lineStyle(1, 0xd0ccC4);
       g.strokeRect(doorX + 10, door1Y + 10, doorW - 20, halfH - 20);
 
-      // puxador porta superior (centrado horizontalmente)
       const ph1x = ex + ew / 2;
       const ph1y = door1Y + halfH - 18;
       g.fillStyle(0xa8b0b8);
@@ -1160,11 +1169,9 @@ class Phase2Scene extends BaseScene {
       g.fillStyle(0xb8c0c8);
       g.fillRect(ph1x - 18, ph1y - 3, 36, 4);
 
-      // Divisória entre portas
       g.fillStyle(0xe0dcd4);
       g.fillRect(ex + 4, topMargin + 22 + halfH, ew - 8, 6);
 
-      // Porta inferior
       const door2Y = door1Y + halfH + 6;
       const door2H = cabinetH - halfH - 30;
       g.fillStyle(0xe8e4dc);
@@ -1174,18 +1181,13 @@ class Phase2Scene extends BaseScene {
       g.lineStyle(1, 0xd0ccC4);
       g.strokeRect(doorX + 10, door2Y + 10, doorW - 20, door2H - 20);
 
-      // puxador porta inferior
       const ph2y = door2Y + 16;
       g.fillStyle(0xa8b0b8);
       g.fillRect(ph1x - 16, ph2y, 32, 6);
       g.fillStyle(0xb8c0c8);
       g.fillRect(ph1x - 18, ph2y - 3, 36, 4);
-
     });
 
-    // ══════════════════════════════════════════════════
-    // ARMÁRIOS AO LADO DO HOOD (vidro 2x2 em cima + porta sólida embaixo)
-    // ══════════════════════════════════════════════════
     [
       { ax: sideAereoLX, mirror: false },
       { ax: sideAereoRX, mirror: true }
@@ -1194,28 +1196,22 @@ class Phase2Scene extends BaseScene {
       const aH = (counterTop - topMargin) - 90;
       const glassH = aH * 0.48;
 
-      // Corpo
       gFront.fillStyle(0xeae6de);
       gFront.fillRect(ax, topMargin, aw, aH);
       gFront.lineStyle(2, 0xc8c4b8);
       gFront.strokeRect(ax + 4, topMargin + 4, aw - 8, aH - 8);
 
-      // Cornice
       gFront.fillStyle(0xe0dcd4);
       gFront.fillRect(ax + 2, topMargin + 18, aw - 4, 3);
 
-      // Configuração dos 4 vidros
-      const vidroW = (aw - 40) / 2;   // margem nas laterais
-      const vidroH = (glassH - 40) / 2;// margem em cima/baixo
-      const inicioY = topMargin + 35;  // empurra mais pra baixo
+      const vidroW = (aw - 40) / 2;
+      const vidroH = (glassH - 40) / 2;
+      const inicioY = topMargin + 35;
 
-      // 4 quadrantes de vidro
       for (let linha = 0; linha < 2; linha++) {
         for (let coluna = 0; coluna < 2; coluna++) {
-          const x = ax + 16 + (coluna * (vidroW + 8)); // gap maior entre os vidros
-          const y = inicioY + (linha * (vidroH + 8));   // gap maior entre as linhas
-
-
+          const x = ax + 16 + (coluna * (vidroW + 8));
+          const y = inicioY + (linha * (vidroH + 8));
           gFront.fillStyle(0x8aaabb, 0.3);
           gFront.fillRect(x, y, vidroW, vidroH);
           gFront.lineStyle(1, 0xaabccc, 0.5);
@@ -1223,8 +1219,6 @@ class Phase2Scene extends BaseScene {
         }
       }
 
-
-      // Porta sólida inferior
       const botY = topMargin + glassH + 15;
       const botH = aH - glassH - 18;
       gFront.fillStyle(0xe8e4dc);
@@ -1233,31 +1227,22 @@ class Phase2Scene extends BaseScene {
       gFront.strokeRect(ax + 9, botY + 4, aw - 18, botH - 8);
       gFront.lineStyle(1, 0xd8d4cc);
       gFront.strokeRect(ax + 14, botY + 9, aw - 28, botH - 18);
-
     });
 
-    // ══════════════════════════════════════════════════
-    // HOOD CENTRAL
-    // ══════════════════════════════════════════════════
-
-    // Cornija superior (atrás dos pratos)
     const corniceH = 50;
     const corniceW = hoodW;
     const corniceX = hoodX;
     const corniceY = topMargin - corniceH;
     gFront.fillStyle(0xeae6de);
     gFront.fillRect(corniceX, corniceY, corniceW, corniceH + 4);
-    // borda inferior saliente
     gFront.fillStyle(0xc8c4bc);
     gFront.fillRect(corniceX, topMargin - 4, corniceW, 4);
 
-    // Pilares e faixa de topo
     gFront.fillStyle(0xeae6de);
     gFront.fillRect(hoodX - sideAereoW - 10, topMargin, sideAereoW * 2 + hoodW + 20, 20);
     gFront.fillRect(hoodX - sideAereoW - 10, topMargin, 10, floorY - topMargin);
     gFront.fillRect(hoodX + hoodW + sideAereoW, topMargin, 10, floorY - topMargin);
 
-    // Corpo retangular
     gFront.fillStyle(0xeae6de);
     gFront.fillRect(hoodX, hoodTopY, hoodW, hoodBodyH);
     gFront.lineStyle(4, 0xd0ccC4);
@@ -1267,7 +1252,6 @@ class Phase2Scene extends BaseScene {
     gFront.fillStyle(0xe2ddd5);
     gFront.fillRect(hoodX + 20, hoodTopY + 20, hoodW - 40, hoodBodyH - 40);
 
-    // 3 painéis rebaixados dentro do corpo
     const pCount = 3;
     const pMargin = 22;
     const pGap = 8;
@@ -1277,21 +1261,16 @@ class Phase2Scene extends BaseScene {
 
     for (let i = 0; i < pCount; i++) {
       const px = hoodX + pMargin + i * (pW + pGap);
-      // sombra externa
       gFront.fillStyle(0xb8b4ac);
       gFront.fillRect(px, pY, pW, pH);
-      // fundo rebaixado
       gFront.fillStyle(0xe8e4dc);
       gFront.fillRect(px + 3, pY + 3, pW - 6, pH - 6);
-      // moldura externa
       gFront.lineStyle(2, 0xc8c4bc);
       gFront.strokeRect(px + 1, pY + 1, pW - 2, pH - 2);
-      // moldura interna
       gFront.lineStyle(1, 0xd8d4cc);
       gFront.strokeRect(px + 6, pY + 6, pW - 12, pH - 12);
     }
 
-    // Trapézio
     g.fillStyle(0xeae6de);
     gFront.fillPoints([
       { x: hoodX, y: hoodTopY + hoodBodyH },
@@ -1307,17 +1286,12 @@ class Phase2Scene extends BaseScene {
       { x: hoodBotX, y: hoodBotY }
     ], true);
 
-    // Barra de aço
     gFront.fillStyle(0xa8b4bc);
     gFront.fillRect(hoodBotX, hoodBotY, hoodBotW, 6);
 
-    // ══════════════════════════════════════════════════
-    // ALTURAS — bancada e fogão mais altos
-    // ══════════════════════════════════════════════════
     const chNew = 95;
-    const counterTopNew = floorY - chNew;  // sobe a bancada
+    const counterTopNew = floorY - chNew;
 
-    // ── Bancada dos lados do fogão ─────────────────────
     const bancadaLX = sideAereoLX;
     const bancadaLW = stoveX - bancadaLX;
     const bancadaRX = stoveX + stoveW;
@@ -1325,7 +1299,10 @@ class Phase2Scene extends BaseScene {
 
     [{ bx: bancadaLX, bw: bancadaLW }, { bx: bancadaRX, bw: bancadaRW }].forEach(({ bx, bw }) => {
       if (bw <= 0) return;
-      // tampo branco
+
+      const drawerH = chNew * 0.25;
+      const drawerW = (bw - 10) / 2;
+
       gFront.fillStyle(0xf0ede6);
       gFront.fillRect(bx, counterTopNew - 6, bw, 6);
       gFront.fillStyle(0xe8e4dc);
@@ -1333,23 +1310,6 @@ class Phase2Scene extends BaseScene {
       gFront.fillStyle(0x060e18, 0.12);
       gFront.fillRect(bx, counterTopNew + 4, bw, 4);
 
-      // 2 gavetas lado a lado (em cima)
-      const drawerH = chNew * 0.25;
-      const drawerW = (bw - 10) / 2;
-      [[bx + 3, bx + 3 + drawerW + 4]].flat().forEach((dx, idx) => {
-        const dxx = idx === 0 ? bx + 3 : bx + 3 + drawerW + 4;
-        const dyy = counterTopNew + 6;
-        const dhh = drawerH;
-        gFront.fillStyle(0xe8e4dc);
-        gFront.fillRect(dxx, dyy, drawerW, dhh);
-        gFront.lineStyle(1, 0xc8c4b8);
-        gFront.strokeRect(dxx + 3, dyy + 3, drawerW - 6, dhh - 6);
-        gFront.fillStyle(0xa8b0b8);
-        gFront.fillRect(dxx + drawerW / 2 - 14, dyy + dhh / 2 - 3, 28, 5);
-        gFront.fillStyle(0xb8c0c8);
-        gFront.fillRect(dxx + drawerW / 2 - 16, dyy + dhh / 2 - 6, 32, 3);
-      });
-      // corrigindo o loop acima de forma mais clara:
       for (let idx = 0; idx < 2; idx++) {
         const dxx = bx + 3 + idx * (drawerW + 4);
         const dyy = counterTopNew + 6;
@@ -1362,9 +1322,15 @@ class Phase2Scene extends BaseScene {
         gFront.fillRect(dxx + drawerW / 2 - 14, dyy + dhh / 2 - 3, 28, 5);
         gFront.fillStyle(0xb8c0c8);
         gFront.fillRect(dxx + drawerW / 2 - 16, dyy + dhh / 2 - 6, 32, 3);
+
+        const zone = this.add.zone(dxx + drawerW / 2, dyy + dhh / 2, drawerW, dhh);
+        this.physics.add.existing(zone, true);
+        this.drawers.push({
+          zone, hasKey: false, searched: false, wall: 2,
+          dx: dxx, dy: dyy, dw: drawerW, dh: dhh
+        });
       }
 
-      // 2 portas grandes embaixo (alinhadas com as gavetas)
       const doorTopY = counterTopNew + 6 + drawerH + 4;
       const doorH = chNew - drawerH - 16;
       for (let idx = 0; idx < 2; idx++) {
@@ -1375,7 +1341,6 @@ class Phase2Scene extends BaseScene {
         gFront.strokeRect(dxx + 3, doorTopY + 3, drawerW - 6, doorH - 6);
         gFront.lineStyle(1, 0xd8d4cc);
         gFront.strokeRect(dxx + 7, doorTopY + 7, drawerW - 14, doorH - 14);
-        // puxador da porta
         gFront.fillStyle(0xa8b0b8);
         gFront.fillRect(dxx + drawerW / 2 - 14, doorTopY + 12, 28, 5);
         gFront.fillStyle(0xb8c0c8);
@@ -1383,21 +1348,15 @@ class Phase2Scene extends BaseScene {
       }
     });
 
-    // ══════════════════════════════════════════════════
-    // FOGÃO TEAL — mais alto
-    // ══════════════════════════════════════════════════
     const stoveTopY = counterTopNew;
     const stoveH = floorY - stoveTopY - 12;
 
-    // Moldura inox externa
     gFront.fillStyle(0xb0b8c0);
     gFront.fillRect(stoveX - 4, stoveTopY, stoveW + 8, stoveH + 12);
 
-    // Corpo teal
     gFront.fillStyle(0x1a6268);
     gFront.fillRect(stoveX, stoveTopY, stoveW, stoveH);
 
-    // Painel de controle inox
     const panelH = 22;
     const panelY = stoveTopY + 2;
     gFront.fillStyle(0xb8c0c8);
@@ -1407,7 +1366,6 @@ class Phase2Scene extends BaseScene {
     gFront.fillStyle(0xa8b0b8);
     gFront.fillRect(stoveX + 2, panelY + panelH - 4, stoveW - 4, 3);
 
-    // 8 knobs
     const knobY = panelY + panelH / 2;
     const displayW = 40;
     const knobAreaW = (stoveW - displayW - 20) / 2;
@@ -1423,7 +1381,6 @@ class Phase2Scene extends BaseScene {
       });
     }
 
-    // Display
     gFront.fillStyle(0x101820);
     gFront.fillRect(centerX - displayW / 2, panelY + 4, displayW, panelH - 8);
     gFront.fillStyle(0x2a7888, 0.8);
@@ -1432,7 +1389,6 @@ class Phase2Scene extends BaseScene {
     gFront.fillRect(centerX - 10, panelY + 8, 8, 3);
     gFront.fillRect(centerX + 2, panelY + 8, 8, 3);
 
-    // Divisória central
     const divY2 = panelY + panelH + 2;
     const divW = 10;
     gFront.fillStyle(0xb8c0c8);
@@ -1440,7 +1396,6 @@ class Phase2Scene extends BaseScene {
     gFront.fillStyle(0xd0d8e0);
     gFront.fillRect(centerX - divW / 2 + 2, divY2, 3, stoveH - (divY2 - stoveTopY));
 
-    // 2 portas de forno
     const ovenY = divY2 + 2;
     const ovenH2 = stoveH - (ovenY - stoveTopY) - 2;
     const ovenPad = 5;
@@ -1455,7 +1410,6 @@ class Phase2Scene extends BaseScene {
       gFront.fillRect(ox2, ovenY, 4, ovenH2);
       gFront.fillRect(ox2 + ow - 4, ovenY, 4, ovenH2);
       gFront.fillRect(ox2, ovenY + ovenH2 - 4, ow, 4);
-      // puxador
       const puxY = ovenY + 6;
       gFront.fillStyle(0xd0d8e0);
       gFront.fillRect(ox2 + 10, puxY, ow - 20, 6);
@@ -1464,7 +1418,6 @@ class Phase2Scene extends BaseScene {
       gFront.fillStyle(0xa0a8b0);
       gFront.fillRect(ox2 + 10, puxY - 2, 8, 10);
       gFront.fillRect(ox2 + ow - 18, puxY - 2, 8, 10);
-      // janela
       const winY = puxY + 10;
       const winH = ovenH2 - (winY - ovenY) - 6;
       gFront.fillStyle(0x1a3040, 0.9);
@@ -1477,7 +1430,6 @@ class Phase2Scene extends BaseScene {
       gFront.strokeRect(ox2 + 6, winY, ow - 12, winH);
     });
 
-    // 4 pés
     const footH = 12, footW = 10;
     [stoveX + 8, stoveX + 28, stoveX + stoveW - 38, stoveX + stoveW - 18].forEach(fx => {
       gFront.fillStyle(0xb8c0c8);
@@ -1488,13 +1440,9 @@ class Phase2Scene extends BaseScene {
       gFront.fillRect(fx, floorY - 4, footW, 4);
     });
 
-    // ══════════════════════════════════════════════════
-    // BACKSPLASH — cobre TODA a área central da parede até a bancada
-    // ══════════════════════════════════════════════════
     const bsX = sideAereoLX;
     const bsW = sideAereoW * 2 + hoodW;
     const bsY = hoodBotY + 6;
-    const bsH = counterTop - bsY;
     const tileW = 38, tileH = 18;
 
     g.fillStyle(0xc8d4ce);
@@ -1511,9 +1459,6 @@ class Phase2Scene extends BaseScene {
       }
     }
 
-    // ══════════════════════════════════════════════════
-    // PRATOS DECORATIVOS (em cima do hood)
-    // ══════════════════════════════════════════════════
     const plateY = topMargin - 8;
     [centerX - 120, centerX - 60, centerX, centerX + 60, centerX + 120].forEach((px, i) => {
       const pr = 20 + (i % 2) * 4;
@@ -1522,9 +1467,6 @@ class Phase2Scene extends BaseScene {
       g.fillStyle(0x2a58b8, 0.5); g.fillEllipse(px, plateY, pr * 0.6, pr * 0.6);
     });
 
-    // ══════════════════════════════════════════════════
-    // LUMINÁRIAS GLOBO (sobre os armários externos)
-    // ══════════════════════════════════════════════════
     [ox + extLW / 2, extRX + extRW / 2].forEach(lx => {
       g.fillStyle(0x888070);
       g.fillRect(lx - 2, 22, 4, topMargin - 14);
@@ -1538,9 +1480,30 @@ class Phase2Scene extends BaseScene {
       g.fillStyle(0xfff8e0, 0.15);
       g.fillEllipse(lx, topMargin + 14, 38, 28);
     });
+
+    // ESCONDERIJOS — portas inferiores dos armários externos
+    [
+      { ex: extLX, ew: extLW },
+      { ex: extRX, ew: extRW }
+    ].forEach(({ ex, ew }) => {
+      if (ew <= 0) return;
+      const cabinetH = this.floorY - topMargin;
+      const halfH = (cabinetH - 30) / 2;
+      const door2Y_s = topMargin + 22 + halfH + 6;
+      const door2H_s = cabinetH - halfH - 30;
+
+      const hideZone = this.add.zone(
+        ex + ew / 2,
+        this.floorY - 40,
+        ew, door2H_s
+      );
+      this.physics.add.existing(hideZone, true);
+      this.wardrobes.push(hideZone);
+    });
   }
+
   // ─── PAREDE 3: PANTRY + GELADEIRA  (X: 2800 → 4200) ──
-buildPantryWall() {
+  buildPantryWall() {
     const g = this.add.graphics().setDepth(1);
     const floorY = this.floorY;
     const topMargin = 55;
@@ -1550,24 +1513,21 @@ buildPantryWall() {
     const wallW = 1400;
     const centerX = ox + wallW / 2;
 
-    // PAREDE
     g.fillStyle(0xaab8b8);
     g.fillRect(ox, 0, wallW, floorY);
     g.fillStyle(0x081828, 0.3);
     g.fillRect(ox, 0, wallW, floorY);
 
-    // TETO
     g.fillStyle(0xd8e0e4);
     g.fillRect(ox, 0, wallW, 22);
     g.fillStyle(0xc8d0d4);
-    [ox+100,ox+300,ox+500,ox+700,ox+900,ox+1100,ox+1300].forEach(x => {
+    [ox + 100, ox + 300, ox + 500, ox + 700, ox + 900, ox + 1100, ox + 1300].forEach(x => {
       g.fillRect(x, 0, 18, topMargin + 10);
     });
     g.fillStyle(0xc0c8cc);
     g.fillRect(ox, topMargin - 12, wallW, 10);
     g.fillRect(ox, topMargin / 2 - 6, wallW, 8);
 
-    // CHÃO
     g.fillStyle(0x3a2a1a);
     g.fillRect(ox, floorY, wallW, 8);
     g.fillStyle(0x2a1a0e, 0.9);
@@ -1576,7 +1536,6 @@ buildPantryWall() {
     this.physics.add.existing(floor3, true);
     this.platforms.add(floor3);
 
-    // ── ARMÁRIO PANTRY ALTO ────────────────────────────
     const pantryX = ox + 60, pantryW = 280;
     const pantryH = floorY - topMargin;
 
@@ -1588,21 +1547,20 @@ buildPantryWall() {
     g.fillStyle(0xe0dcd4);
     g.fillRect(pantryX + 2, topMargin + 16, pantryW - 4, 5);
 
-    const pDoorW   = pantryW / 2 - 8;
-    const doorPad  = 6;
+    const pDoorW = pantryW / 2 - 8;
+    const doorPad = 6;
     const innerPad = 12;
 
     const totalDoorH = pantryH - 22;
-    const gap        = 8;
-    const door1H     = Math.floor(totalDoorH * 0.58);
-    const door2H     = totalDoorH - door1H - gap;
-    const door1Y     = topMargin + 22;
-    const door2Y     = door1Y + door1H + gap;
+    const gap = 8;
+    const door1H = Math.floor(totalDoorH * 0.58);
+    const door2H = totalDoorH - door1H - gap;
+    const door1Y = topMargin + 22;
+    const door2Y = door1Y + door1H + gap;
 
     [[pantryX + doorPad], [pantryX + pantryW / 2 + 2]].forEach(([dx]) => {
       const isRight = dx > pantryX + pantryW / 2;
 
-      // Porta superior
       g.fillStyle(0xe8e4dc);
       g.fillRect(dx, door1Y, pDoorW, door1H);
       g.lineStyle(2, 0xc0bcb4);
@@ -1610,7 +1568,6 @@ buildPantryWall() {
       g.lineStyle(1, 0xd0ccC4);
       g.strokeRoundedRect(dx + innerPad, door1Y + innerPad, pDoorW - innerPad * 2, door1H - innerPad * 2, 6);
 
-      // Porta inferior
       g.fillStyle(0xe8e4dc);
       g.fillRect(dx, door2Y, pDoorW, door2H);
       g.lineStyle(2, 0xc0bcb4);
@@ -1618,7 +1575,6 @@ buildPantryWall() {
       g.lineStyle(1, 0xd0ccC4);
       g.strokeRoundedRect(dx + innerPad, door2Y + innerPad, pDoorW - innerPad * 2, door2H - innerPad * 2, 6);
 
-      // Puxador vertical — borda interna
       const ph2X = isRight ? dx + 4 : dx + pDoorW - 16;
       const ph2Y = door2Y - 24;
       const ph2H = door2H * 0.4;
@@ -1634,7 +1590,6 @@ buildPantryWall() {
     g.fillStyle(0x081828, 0.18);
     g.fillRect(pantryX + pantryW - 5, topMargin, 5, pantryH);
 
-    // ── NICHO CENTRAL ─────────────────────────────────
     const nichoX = pantryX + pantryW + 6, nichoW = 200, nichoH = floorY - topMargin;
     g.fillStyle(0x98a8a8);
     g.fillRect(nichoX, topMargin, nichoW, nichoH);
@@ -1643,11 +1598,10 @@ buildPantryWall() {
     g.fillRect(nichoX + nichoW, topMargin, 16, nichoH);
     g.fillRect(nichoX - 16, topMargin, nichoW + 32, 20);
 
-    // Prateleira 1 — livros
     const shelf1Y = topMargin + 30, shelf1H = 70;
     g.fillStyle(0xeae6de);
     g.fillRect(nichoX, shelf1Y + shelf1H - 8, nichoW, 8);
-    const bookColors = [0xd44444,0xe8a030,0x4488cc,0xcc4444,0x44aa66,0xe05050,0x3366aa,0xaa4488,0xddbb44,0x558844];
+    const bookColors = [0xd44444, 0xe8a030, 0x4488cc, 0xcc4444, 0x44aa66, 0xe05050, 0x3366aa, 0xaa4488, 0xddbb44, 0x558844];
     const bookW = nichoW / bookColors.length;
     bookColors.forEach((col, i) => {
       const bx = nichoX + i * bookW + 2, bh = 36 + (i % 3) * 8;
@@ -1655,13 +1609,12 @@ buildPantryWall() {
       g.fillStyle(col, 0.6); g.fillRect(bx + 1, shelf1Y + shelf1H - 8 - bh, 3, bh);
     });
 
-    // Prateleira 2 — abajures + quadro
     const shelf2Y = shelf1Y + shelf1H + 4, shelf2H = 75;
     g.fillStyle(0xeae6de);
     g.fillRect(nichoX, shelf2Y + shelf2H - 8, nichoW, 8);
     const lamp1X = nichoX + 30, lamp1Y = shelf2Y + shelf2H - 8;
     g.fillStyle(0xd8c8a0);
-    g.fillPoints([{x:lamp1X-16,y:lamp1Y-44},{x:lamp1X+16,y:lamp1Y-44},{x:lamp1X+11,y:lamp1Y-8},{x:lamp1X-11,y:lamp1Y-8}], true);
+    g.fillPoints([{ x: lamp1X - 16, y: lamp1Y - 44 }, { x: lamp1X + 16, y: lamp1Y - 44 }, { x: lamp1X + 11, y: lamp1Y - 8 }, { x: lamp1X - 11, y: lamp1Y - 8 }], true);
     g.fillStyle(0x9a8870); g.fillRect(lamp1X - 3, lamp1Y - 50, 6, 10);
     g.fillStyle(0xfff8e0, 0.4); g.fillEllipse(lamp1X, lamp1Y - 26, 24, 16);
     g.fillStyle(0xd8d0c8); g.fillRect(nichoX + 62, shelf2Y + 8, 70, 50);
@@ -1669,33 +1622,30 @@ buildPantryWall() {
     g.fillStyle(0x8898a8, 0.4); g.fillRect(nichoX + 68, shelf2Y + 14, 58, 38);
     const lamp2X = nichoX + nichoW - 30;
     g.fillStyle(0xd8c8a0);
-    g.fillPoints([{x:lamp2X-16,y:lamp1Y-44},{x:lamp2X+16,y:lamp1Y-44},{x:lamp2X+11,y:lamp1Y-8},{x:lamp2X-11,y:lamp1Y-8}], true);
+    g.fillPoints([{ x: lamp2X - 16, y: lamp1Y - 44 }, { x: lamp2X + 16, y: lamp1Y - 44 }, { x: lamp2X + 11, y: lamp1Y - 8 }, { x: lamp2X - 11, y: lamp1Y - 8 }], true);
     g.fillStyle(0x9a8870); g.fillRect(lamp2X - 3, lamp1Y - 50, 6, 10);
     g.fillStyle(0xfff8e0, 0.4); g.fillEllipse(lamp2X, lamp1Y - 26, 24, 16);
 
-    // Micro-ondas
     const mwY = shelf2Y + shelf2H + 4, mwH = 90;
     g.fillStyle(0x282828); g.fillRect(nichoX + 4, mwY, nichoW - 8, mwH);
     g.lineStyle(2, 0x484848); g.strokeRect(nichoX + 4, mwY, nichoW - 8, mwH);
     g.fillStyle(0x1a1a1a); g.fillRect(nichoX + nichoW - 44, mwY + 4, 36, mwH - 8);
     g.fillStyle(0x0a1818, 0.9); g.fillRect(nichoX + 8, mwY + 8, nichoW - 60, mwH - 16);
     g.lineStyle(1, 0x3a4848); g.strokeRect(nichoX + 8, mwY + 8, nichoW - 60, mwH - 16);
-    [mwY+20,mwY+36,mwY+52,mwY+68].forEach(by => {
+    [mwY + 20, mwY + 36, mwY + 52, mwY + 68].forEach(by => {
       g.fillStyle(0x505050); g.fillCircle(nichoX + nichoW - 24, by, 4);
     });
     g.fillStyle(0x585858); g.fillRect(nichoX + nichoW - 52, mwY + mwH / 2 - 20, 4, 40);
 
-    // Gaveta abaixo do micro
     const drawerY = mwY + mwH + 4, drawerH = 30;
     g.fillStyle(0xe8e4dc); g.fillRect(nichoX + 4, drawerY, nichoW - 8, drawerH);
     g.lineStyle(1, 0xc8c4b8); g.strokeRect(nichoX + 8, drawerY + 4, nichoW - 16, drawerH - 8);
     g.fillStyle(0xa0a8b0); g.fillRect(nichoX + nichoW / 2 - 18, drawerY + drawerH / 2 - 3, 36, 6);
 
-    // Armário baixo
-    const botNichoY  = drawerY + drawerH + 4;
-    const botNichoH  = floorY - botNichoY;
-    const pDoorW2    = (nichoW - 12) / 2;
-    const innerPad2  = 10;
+    const botNichoY = drawerY + drawerH + 4;
+    const botNichoH = floorY - botNichoY;
+    const pDoorW2 = (nichoW - 12) / 2;
+    const innerPad2 = 10;
 
     [[nichoX + 4, 'left'], [nichoX + nichoW / 2 + 2, 'right']].forEach(([dx, side]) => {
       const isRight = side === 'right';
@@ -1716,7 +1666,6 @@ buildPantryWall() {
       g.fillStyle(0xe0e8f0); g.fillRect(phX + 1, phY + 4, 3, phH - 8);
     });
 
-    // ── GELADEIRA EMBUTIDA ────────────────────────────
     const fridgeX = nichoX + nichoW + 32, fridgeW = 300;
     const fridgeH = floorY - topMargin - 10, fridgeY = topMargin;
     const fridgeMidX = fridgeX + fridgeW / 2;
@@ -1727,13 +1676,11 @@ buildPantryWall() {
     g.lineStyle(2, 0xc8c4b8); g.strokeRect(fridgeX - 12, fridgeY + 4, fridgeW + 24, fridgeCaixilhoH - 8);
     g.lineStyle(1, 0xd8d4cc); g.strokeRect(fridgeX - 6, fridgeY + 8, fridgeW + 12, fridgeCaixilhoH - 16);
 
-    // Corpo
     g.fillStyle(0xe8e4dc);
     g.fillRect(fridgeX, fridgeY + fridgeCaixilhoH, fridgeW, fridgeH - fridgeCaixilhoH);
     g.fillStyle(0xb8bcc4);
     g.fillRect(fridgeMidX - 3, fridgeY + fridgeCaixilhoH, 6, fridgeH - fridgeCaixilhoH);
 
-    // Painéis porta esq
     g.lineStyle(2, 0xc8c4b8);
     g.strokeRect(fridgeX + 6, fridgeY + fridgeCaixilhoH + 6, fridgeW / 2 - 12, (fridgeH - 50) / 2);
     g.strokeRect(fridgeX + 6, fridgeY + fridgeCaixilhoH + 10 + (fridgeH - 50) / 2, fridgeW / 2 - 12, (fridgeH - 60) / 2);
@@ -1741,7 +1688,6 @@ buildPantryWall() {
     g.strokeRect(fridgeX + 12, fridgeY + fridgeCaixilhoH + 12, fridgeW / 2 - 24, (fridgeH - 50) / 2 - 10);
     g.strokeRect(fridgeX + 12, fridgeY + fridgeCaixilhoH + 18 + (fridgeH - 50) / 2, fridgeW / 2 - 24, (fridgeH - 60) / 2 - 12);
 
-    // Painéis porta dir
     g.lineStyle(2, 0xc8c4b8);
     g.strokeRect(fridgeMidX + 6, fridgeY + fridgeCaixilhoH + 6, fridgeW / 2 - 12, (fridgeH - 50) / 2);
     g.strokeRect(fridgeMidX + 6, fridgeY + fridgeCaixilhoH + 10 + (fridgeH - 50) / 2, fridgeW / 2 - 12, (fridgeH - 60) / 2);
@@ -1749,7 +1695,6 @@ buildPantryWall() {
     g.strokeRect(fridgeMidX + 12, fridgeY + fridgeCaixilhoH + 12, fridgeW / 2 - 24, (fridgeH - 50) / 2 - 10);
     g.strokeRect(fridgeMidX + 12, fridgeY + fridgeCaixilhoH + 18 + (fridgeH - 50) / 2, fridgeW / 2 - 24, (fridgeH - 60) / 2 - 12);
 
-    // Puxadores
     const phY = fridgeY + fridgeH * 0.60;
     const phH = 80;
     const ph1X = fridgeMidX - 16;
@@ -1765,13 +1710,11 @@ buildPantryWall() {
     g.fillRect(ph2X - 2, phY + phH - 3, 12, 7);
     g.fillStyle(0xe0e8f0); g.fillRect(ph2X + 1, phY + 4, 3, phH - 8);
 
-    // ── PAREDE DIREITA ────────────────────────────────
     const rightWallX = fridgeX + fridgeW + 16;
-    const chR = 100; 
+    const chR = 100;
     const counterTopR = floorY - chR;
     const rightW = 210;
 
-    // Tampo
     g.fillStyle(0xf0ede6);
     g.fillRect(rightWallX, counterTopR - 6, rightW, 6);
     g.fillStyle(0xe8e4dc);
@@ -1779,7 +1722,6 @@ buildPantryWall() {
     g.fillStyle(0x060e18, 0.12);
     g.fillRect(rightWallX, counterTopR + 4, rightW, 4);
 
-    // 2 gavetas finas no topo
     const drawerHR = chR * 0.25;
     const drawerWR = (rightW - 10) / 2;
     for (let i = 0; i < 2; i++) {
@@ -1792,17 +1734,16 @@ buildPantryWall() {
       g.lineStyle(1, 0xd0ccC4);
       g.strokeRect(dx + 7, dy + 7, drawerWR - 14, drawerHR - 14);
       g.fillStyle(0xb0b8c0);
-      g.fillRect(dx + drawerWR/2 - 16, dy + drawerHR/2 - 3, 32, 6);
+      g.fillRect(dx + drawerWR / 2 - 16, dy + drawerHR / 2 - 3, 32, 6);
       g.fillStyle(0xd0d8e0);
-      g.fillRect(dx + drawerWR/2 - 18, dy + drawerHR/2 - 5, 36, 3);
+      g.fillRect(dx + drawerWR / 2 - 18, dy + drawerHR / 2 - 5, 36, 3);
       g.fillStyle(0xa0a8b0);
-      g.fillRect(dx + drawerWR/2 - 18, dy + drawerHR/2 - 5, 5, 8);
-      g.fillRect(dx + drawerWR/2 + 13, dy + drawerHR/2 - 5, 5, 8);
+      g.fillRect(dx + drawerWR / 2 - 18, dy + drawerHR / 2 - 5, 5, 8);
+      g.fillRect(dx + drawerWR / 2 + 13, dy + drawerHR / 2 - 5, 5, 8);
     }
 
-    // 2 portas grandes embaixo
     const doorTopYR = counterTopR + drawerHR + 9;
-    const doorHR    = chR - drawerHR - 14;
+    const doorHR = chR - drawerHR - 14;
     const innerPadR = 10;
     for (let i = 0; i < 2; i++) {
       const dx = rightWallX + 3 + i * (drawerWR + 4);
@@ -1811,31 +1752,30 @@ buildPantryWall() {
       g.lineStyle(2, 0xc0bcb4);
       g.strokeRect(dx + 3, doorTopYR + 3, drawerWR - 6, doorHR - 6);
       g.fillStyle(0xd8d4cc);
-      g.fillRect(dx + innerPadR, doorTopYR + innerPadR, drawerWR - innerPadR*2, doorHR - innerPadR*2);
+      g.fillRect(dx + innerPadR, doorTopYR + innerPadR, drawerWR - innerPadR * 2, doorHR - innerPadR * 2);
       g.fillStyle(0xe8e4dc);
-      g.fillRect(dx + innerPadR + 3, doorTopYR + innerPadR + 3, drawerWR - innerPadR*2 - 6, doorHR - innerPadR*2 - 6);
+      g.fillRect(dx + innerPadR + 3, doorTopYR + innerPadR + 3, drawerWR - innerPadR * 2 - 6, doorHR - innerPadR * 2 - 6);
       g.lineStyle(1, 0xd0ccC4);
-      g.strokeRect(dx + innerPadR, doorTopYR + innerPadR, drawerWR - innerPadR*2, doorHR - innerPadR*2);
+      g.strokeRect(dx + innerPadR, doorTopYR + innerPadR, drawerWR - innerPadR * 2, doorHR - innerPadR * 2);
       const phDy = doorTopYR + 14;
       g.fillStyle(0xb0b8c0);
-      g.fillRect(dx + drawerWR/2 - 16, phDy, 32, 6);
+      g.fillRect(dx + drawerWR / 2 - 16, phDy, 32, 6);
       g.fillStyle(0xd0d8e0);
-      g.fillRect(dx + drawerWR/2 - 18, phDy - 2, 36, 3);
+      g.fillRect(dx + drawerWR / 2 - 18, phDy - 2, 36, 3);
       g.fillStyle(0xa0a8b0);
-      g.fillRect(dx + drawerWR/2 - 18, phDy - 2, 5, 10);
-      g.fillRect(dx + drawerWR/2 + 13, phDy - 2, 5, 10);
+      g.fillRect(dx + drawerWR / 2 - 18, phDy - 2, 5, 10);
+      g.fillRect(dx + drawerWR / 2 + 13, phDy - 2, 5, 10);
     }
 
-    // Prateleiras flutuantes com livros
     [topMargin + 150].forEach((sy, si) => {
       g.fillStyle(0xeae6de);
       g.fillRect(rightWallX, sy + 60, 210, 8);
       g.fillRect(rightWallX, sy - 8, 8, 76);
       g.fillRect(rightWallX + 202, sy - 8, 8, 76);
-      g.fillPoints([{x:rightWallX,y:sy+60},{x:rightWallX+28,y:sy+60},{x:rightWallX+8,y:sy+20}], true);
+      g.fillPoints([{ x: rightWallX, y: sy + 60 }, { x: rightWallX + 28, y: sy + 60 }, { x: rightWallX + 8, y: sy + 20 }], true);
       const bColors = si === 0
-        ? [0xcc4444,0x4488cc,0xe8a030,0xaa4488,0x44aa66,0xddbb44,0xd44444]
-        : [0x558844,0x3366aa,0xcc6644,0x8844aa,0xdd9944];
+        ? [0xcc4444, 0x4488cc, 0xe8a030, 0xaa4488, 0x44aa66, 0xddbb44, 0xd44444]
+        : [0x558844, 0x3366aa, 0xcc6644, 0x8844aa, 0xdd9944];
       const bw = (210 - 16) / (bColors.length + 1);
       bColors.forEach((col, i) => {
         const bx = rightWallX + 10 + i * (bw + 1), bh = 36 + (i % 3) * 8;
@@ -1848,14 +1788,12 @@ buildPantryWall() {
       }
     });
 
-    // Objeto decorativo
     g.fillStyle(0x4488cc, 0.8); g.fillCircle(rightWallX + 106, topMargin + 230, 8);
     g.fillStyle(0x88aacc, 0.8); g.fillCircle(rightWallX + 124, topMargin + 238, 6);
     g.fillStyle(0x446688);
     g.fillRect(rightWallX + 104, topMargin + 240, 4, 24);
     g.fillRect(rightWallX + 122, topMargin + 246, 3, 18);
 
-    // Abertura para a sala
     const openX = ox + wallW - 260, openW = 260;
     g.fillStyle(0xc8b898);
     g.fillRect(openX, topMargin, openW, floorY - topMargin);
@@ -1879,14 +1817,13 @@ buildPantryWall() {
     g.fillStyle(0xa09880, 0.4);
     g.fillEllipse(openX + 110, floorY - 20, 150, 28);
 
-    // ── LUMINÁRIAS PENDENTES ──────────────────────────
     [pantryX + pantryW / 2, fridgeX + fridgeW / 2 + 50].forEach(lx => {
       g.fillStyle(0x888070);
       g.fillRect(lx - 2, 22, 4, topMargin - 22);
       g.fillStyle(0xf0f0ec);
       g.fillEllipse(lx, topMargin + 20, 52, 44);
       g.lineStyle(1, 0xd8d4cc);
-      [0.3,0.55,0.75,0.9].forEach(r => g.strokeEllipse(lx, topMargin + 20, 52 * r, 44 * r));
+      [0.3, 0.55, 0.75, 0.9].forEach(r => g.strokeEllipse(lx, topMargin + 20, 52 * r, 44 * r));
       g.fillStyle(0x888070);
       g.fillRect(lx - 8, topMargin - 6, 16, 8);
       g.fillRect(lx - 4, topMargin + 40, 8, 8);
@@ -1895,20 +1832,381 @@ buildPantryWall() {
       g.fillStyle(0x8ab0cc, 0.04);
       g.fillTriangle(lx - 80, topMargin + 44, lx + 80, topMargin + 44, lx, floorY);
     });
+
+    // ESCONDERIJO — armário pantry
+    const hideZonePantry = this.add.zone(
+      pantryX + pantryW / 2,
+      door2Y + door2H / 2,
+      pantryW, door2H
+    );
+    this.physics.add.existing(hideZonePantry, true);
+    this.wardrobes.push(hideZonePantry);
+
+    // GAVETAS DA BANCADA DIREITA — parede 3
+    for (let i = 0; i < 2; i++) {
+      const dx = rightWallX + 3 + i * (drawerWR + 4);
+      const dy = counterTopR + 5;
+      const zone = this.add.zone(dx + drawerWR / 2, dy + drawerHR / 2, drawerWR, drawerHR);
+      this.physics.add.existing(zone, true);
+      this.drawers.push({
+        zone, hasKey: false, searched: false, wall: 3,
+        dx, dy, dw: drawerWR, dh: drawerHR
+      });
+    }
+  }
+
+  // ─── PAREDE 4: FACHADA DA MANSÃO  (X: 4200 → 5600) ───
+  buildMansionFacade() {
+    const g = this.add.graphics().setDepth(1);
+    const floorY = this.floorY;
+    const ox = 4200;
+    const wallW = 1400;
+    const midX = ox + 512;
+
+    const C = {
+      wall: 0x8a9aac,
+      wallSh: 0x6a7a8c,
+      roof: 0x2e3848,
+      roofFt: 0x3a4558,
+      trim: 0xa8bece,
+      col: 0xc8dcea,
+      winOn: 0xd4881a,
+      winGlow: 0xf0a840,
+      attic: 0x2e3a4e,
+      porchBg: 0x36424e,
+      stone: 0x5a6878,
+    };
+
+    const win = (wx, wy, ww, wh) => {
+      g.fillStyle(C.winOn, 0.9);
+      g.fillRect(wx, wy, ww, wh);
+      g.fillStyle(C.winGlow, 0.25);
+      g.fillRect(wx + 3, wy + 3, ww - 6, wh * 0.38);
+      g.fillStyle(C.trim, 1);
+      g.fillRect(wx - 4, wy - 4, ww + 8, 5);
+      g.fillRect(wx - 4, wy + wh, ww + 8, 5);
+      g.fillRect(wx - 4, wy - 4, 5, wh + 9);
+      g.fillRect(wx + ww, wy - 4, 5, wh + 9);
+      g.fillStyle(C.wallSh, 1);
+      g.fillRect(wx + ww / 2 - 2, wy, 4, wh);
+      g.fillRect(wx, wy + wh * 0.46, ww, 3);
+    };
+
+    const balcony = (sx, by, bw) => {
+      g.fillStyle(C.wallSh, 1);
+      g.fillRect(sx - 10, by + 4, bw + 20, 8);
+      g.fillStyle(C.trim, 1);
+      for (let bx = sx - 6; bx <= sx + bw + 2; bx += 10) {
+        g.fillRect(bx, by - 38, 3, 42);
+      }
+      g.fillRect(sx - 10, by - 42, bw + 24, 6);
+      g.fillRect(sx - 10, by, bw + 24, 6);
+      g.fillEllipse(sx - 10, by - 39, 12, 12);
+      g.fillEllipse(sx + bw + 14, by - 39, 12, 12);
+    };
+
+    const wing = (sx, flip) => {
+      const wW = 196, wH = 200;
+      const wY = floorY - wH;
+      const ch = 24;
+
+      g.fillStyle(C.wall, 1);
+      if (!flip) {
+        g.fillPoints([
+          { x: sx, y: wY },
+          { x: sx + wW, y: wY },
+          { x: sx + wW, y: floorY },
+          { x: sx + ch, y: floorY },
+          { x: sx, y: floorY - ch }
+        ], true);
+      } else {
+        g.fillPoints([
+          { x: sx, y: wY },
+          { x: sx + wW, y: wY },
+          { x: sx + wW, y: floorY - ch },
+          { x: sx + wW - ch, y: floorY },
+          { x: sx, y: floorY }
+        ], true);
+      }
+
+      g.fillStyle(C.wallSh, 1);
+      if (!flip) g.fillRect(sx, wY, 30, wH);
+      else g.fillRect(sx + wW - 30, wY, 30, wH);
+
+      const apexX = sx + wW / 2;
+      const apexY = wY - 80;
+      g.fillStyle(C.roof, 1);
+      g.fillTriangle(apexX, apexY, sx - 12, wY, sx + wW + 12, wY);
+
+      g.fillStyle(C.roofFt, 1);
+      g.fillTriangle(apexX, apexY + 14, sx + 20, wY, sx + wW - 20, wY);
+      g.lineStyle(2, C.trim, 1);
+      g.strokeTriangle(apexX, apexY + 14, sx + 20, wY, sx + wW - 20, wY);
+
+      g.fillStyle(C.trim, 1);
+      g.fillRect(sx - 12, wY - 3, wW + 24, 6);
+
+      g.fillStyle(C.winOn, 0.7);
+      g.fillEllipse(apexX, wY - 46, 30, 20);
+      g.lineStyle(3, C.trim, 1);
+      g.strokeEllipse(apexX, wY - 46, 32, 22);
+
+      const divY = wY + wH * 0.46;
+      g.fillStyle(C.trim, 1);
+      g.fillRect(sx, divY, wW, 6);
+
+      balcony(sx, divY, wW);
+
+      const w2Y = wY + 14;
+      const w2H = divY - wY - 24;
+      win(sx + 14, w2Y, 42, w2H);
+      win(sx + 64, w2Y, 68, w2H);
+      win(sx + wW - 56, w2Y, 42, w2H);
+
+      const w1Y = divY + 16;
+      const w1H = floorY - 56 - w1Y;
+      const w1W = Math.floor((wW - 22 * 2 - 16 * 2) / 3);
+      [sx + 22, sx + 22 + w1W + 16, sx + 22 + (w1W + 16) * 2].forEach(wx => {
+        win(wx, w1Y, w1W, w1H);
+      });
+    };
+
+    g.fillStyle(0x0d1825, 1);
+    g.fillRect(ox, 0, wallW, floorY);
+    g.fillStyle(0x0a1828, 0.6);
+    g.fillRect(ox, 0, wallW, 200);
+
+    [
+      [ox + 80, 25], [ox + 160, 14], [ox + 250, 38], [ox + 370, 12], [ox + 460, 30],
+      [ox + 580, 8], [ox + 700, 32], [ox + 820, 18], [ox + 940, 26], [ox + 1060, 40],
+      [ox + 120, 58], [ox + 330, 50], [ox + 550, 65], [ox + 780, 52], [ox + 1200, 35],
+      [ox + 290, 80], [ox + 640, 72], [ox + 900, 84], [ox + 1100, 62], [ox + 1320, 48],
+    ].forEach(([sx, sy]) => {
+      g.fillStyle(0xffffff, 0.45 + (sx % 5) * 0.1);
+      g.fillCircle(sx, sy, sx % 4 === 0 ? 2 : 1.5);
+    });
+
+    [
+      { cx: ox + 60, tw: 110, th: 200 },
+      { cx: ox + 155, tw: 130, th: 220 },
+      { cx: ox + 255, tw: 105, th: 195 },
+      { cx: ox + 1145, tw: 105, th: 195 },
+      { cx: ox + 1250, tw: 130, th: 218 },
+      { cx: ox + 1345, tw: 110, th: 200 },
+    ].forEach(({ cx, tw, th }) => {
+      const baseY = floorY - 52;
+      g.fillStyle(0x0e1c0c, 1); g.fillRect(cx - 5, baseY - th * 0.25, 10, th * 0.25);
+      g.fillStyle(0x0d1c0b, 1); g.fillEllipse(cx, baseY - th * 0.5, tw, th * 0.68);
+      g.fillStyle(0x122010, 1); g.fillEllipse(cx - tw * .16, baseY - th * .6, tw * .7, th * .5);
+      g.fillStyle(0x162614, 1); g.fillEllipse(cx + tw * .12, baseY - th * .65, tw * .6, th * .44);
+    });
+
+    const cX = ox + 340;
+    const cW = 344;
+    const cY = 215;
+    g.fillStyle(C.wall, 1);
+    g.fillRect(cX, cY, cW, floorY - cY);
+
+    const sX = ox + 398;
+    const sW = 228;
+    const sY = 108;
+    g.fillStyle(C.attic, 1);
+    g.fillRect(sX, sY, sW, cY - sY);
+
+    g.fillStyle(C.wallSh, 1);
+    g.fillPoints([
+      { x: cX, y: cY },
+      { x: sX, y: sY },
+      { x: sX, y: cY },
+    ], true);
+    g.fillPoints([
+      { x: cX + cW, y: cY },
+      { x: sX + sW, y: sY },
+      { x: sX + sW, y: cY },
+    ], true);
+
+    g.fillStyle(C.roof, 1);
+    g.fillPoints([
+      { x: sX - 14, y: sY },
+      { x: sX + sW + 14, y: sY },
+      { x: sX + sW + 2, y: sY - 44 },
+      { x: sX - 2, y: sY - 44 }
+    ], true);
+
+    g.fillStyle(C.trim, 1);
+    g.fillRect(sX - 18, sY - 3, sW + 36, 7);
+
+    g.fillStyle(C.wallSh, 1);
+    g.fillRect(ox + 492, 28, 40, 54);
+    g.fillStyle(C.roof, 1);
+    g.fillRect(ox + 488, 22, 48, 10);
+
+    const extX = cX + cW;
+    g.fillStyle(C.wall, 1);
+    g.fillRect(extX, 258, 68, floorY - 258);
+    g.fillStyle(C.roof, 1);
+    g.fillPoints([
+      { x: extX - 10, y: cY },
+      { x: extX + 80, y: 258 },
+      { x: extX + 80, y: cY }
+    ], true);
+    g.fillStyle(C.trim, 1);
+    g.fillRect(extX - 12, cY - 2, 94, 6);
+
+    wing(ox + 148, false);
+    wing(ox + 148 + 196 + cW - 52, true);
+
+    const porchX = ox + 355;
+    const porchW = 314;
+    const pRoofY = cY;
+    const pRoofH = 16;
+    g.fillStyle(C.roof, 1);
+    g.fillRect(porchX - 12, pRoofY, porchW + 24, pRoofH);
+    g.fillStyle(C.trim, 1);
+    g.fillRect(porchX - 12, pRoofY + pRoofH - 3, porchW + 24, 5);
+    g.fillStyle(0x000000, 0.22);
+    g.fillRect(porchX - 12, pRoofY + pRoofH, porchW + 24, 10);
+
+    g.fillStyle(C.porchBg, 1);
+    g.fillRect(porchX, pRoofY + pRoofH, porchW, floorY - pRoofY - pRoofH);
+
+    const archY = pRoofY + pRoofH + 10;
+    const archH = floorY - archY - 8;
+    const archW = 82;
+    const archGap = 16;
+    const arch1X = porchX + 12;
+
+    [arch1X, arch1X + archW + archGap, arch1X + (archW + archGap) * 2].forEach(ax => {
+      const rectH = archH * 0.68;
+      const rectY = archY + archH - rectH;
+      g.fillStyle(C.winOn, 0.92);
+      g.fillRect(ax, rectY, archW, rectH);
+      g.fillEllipse(ax + archW / 2, rectY, archW, archW * 0.9);
+      g.fillStyle(C.winGlow, 0.2);
+      g.fillEllipse(ax + archW / 2, rectY - archW * 0.1, archW * 0.65, archW * 0.5);
+      g.lineStyle(3, C.trim, 1);
+      g.strokeRect(ax + 2, rectY, archW - 4, rectH - 2);
+      g.strokeEllipse(ax + archW / 2, rectY, archW - 4, archW * 0.9 - 4);
+      g.fillStyle(C.wallSh, 0.5);
+      g.fillRect(ax + archW / 2 - 2, rectY, 4, rectH);
+      g.fillStyle(C.trim, 0.4);
+      g.fillRect(ax + 2, rectY + rectH * 0.55, archW - 4, 3);
+    });
+
+    const colY = pRoofY + pRoofH;
+    const colH = floorY - colY;
+    const colW = 14;
+    const colPositions = [
+      porchX + 6,
+      porchX + 6 + (porchW - 12) / 3,
+      porchX + 6 + (porchW - 12) * 2 / 3,
+      porchX + porchW - 6 - colW
+    ];
+    colPositions.forEach(cx2 => {
+      g.fillStyle(C.col, 1);
+      g.fillRect(cx2, colY, colW, colH);
+      g.fillStyle(0xddeeff, 1);
+      g.fillRect(cx2 - 4, colY, colW + 8, 10);
+      g.fillRect(cx2 - 3, colY + colH - 7, colW + 6, 7);
+    });
+
+    const lantX = ox + 512, lantY = colY + 16;
+    g.fillStyle(C.wallSh, 1);
+    g.fillRect(lantX - 2, colY, 4, 18);
+    g.fillStyle(0x1e2430, 1);
+    g.fillRect(lantX - 7, lantY + 16, 14, 20);
+    g.fillStyle(C.winOn, 0.75);
+    g.fillRect(lantX - 5, lantY + 18, 10, 16);
+    g.fillStyle(C.winGlow, 0.07);
+    g.fillEllipse(lantX, lantY + 26, 65, 52);
+
+    const a2Y = sY + 14, a2H = (cY - sY) - 24, a2W = 62;
+    [sX + 14, sX + 14 + a2W + 14, sX + 14 + (a2W + 14) * 2].forEach(wx => {
+      win(wx, a2Y, a2W, a2H);
+    });
+
+    g.fillStyle(C.stone, 1);
+    g.fillRect(extX + 2, floorY - 28, 46, 8);
+    g.fillRect(extX + 2, floorY - 18, 62, 8);
+    g.fillRect(extX + 2, floorY - 8, 78, 8);
+
+    g.fillStyle(0x0a160a, 1);
+    g.fillRect(ox, floorY - 52, wallW, 52);
+    g.fillStyle(C.stone, 1);
+    g.fillRect(ox, floorY, wallW, 10);
+    g.fillStyle(0x282e3a, 1);
+    g.fillRect(ox + 412, floorY + 10, 200, 28);
+    g.lineStyle(1, 0x343a48, 0.5);
+    for (let tx = ox + 412; tx < ox + 612; tx += 40) {
+      g.strokeRect(tx, floorY + 10, 40, 14);
+      g.strokeRect(tx, floorY + 24, 40, 14);
+    }
+
+    const floor4 = this.add.rectangle(ox + wallW / 2, floorY + 30, wallW, 60).setVisible(false);
+    this.physics.add.existing(floor4, true);
+    this.platforms.add(floor4);
+
+    const bush = (bx, br, dark = false) => {
+      const by = floorY - 50 - br * 0.28;
+      g.fillStyle(dark ? 0x183020 : 0x1c3c28, 1);
+      g.fillEllipse(bx, by, br * 2, br * 1.4);
+      g.fillStyle(dark ? 0x142818 : 0x183422, 1);
+      g.fillEllipse(bx - br * 0.3, by - br * 0.18, br * 1.3, br);
+    };
+    [
+      [ox + 190, 22, false], [ox + 230, 16, true], [ox + 268, 20, false],
+      [ox + 750, 20, false], [ox + 788, 16, true], [ox + 826, 22, false],
+    ].forEach(([bx, br, d]) => bush(bx, br, d));
+
+    [ox + 210, ox + 770].forEach(fx => {
+      const fy = floorY - 50;
+      g.fillStyle(0x283468, 0.9); g.fillEllipse(fx, fy, 32, 20);
+      g.fillStyle(0x384878, 0.6); g.fillEllipse(fx - 8, fy - 4, 20, 14);
+    });
+
+    const ux = ox + 600, uy = floorY - 8;
+    g.fillStyle(0x485868, 1); g.fillRect(ux - 2, uy - 68, 4, 68);
+    g.fillStyle(0x5a6e7a, 1);
+    g.fillPoints([{ x: ux, y: uy - 68 }, { x: ux - 50, y: uy - 30 }, { x: ux + 50, y: uy - 30 }], true);
+    g.fillStyle(0x485868, 1);
+    g.fillRect(ux - 26, uy - 12, 52, 5);
+    g.fillRect(ux - 20, uy - 7, 4, 14);
+    g.fillRect(ux + 16, uy - 7, 4, 14);
+    [-46, 36].forEach(cx2 => {
+      g.fillStyle(0x404e5e, 1);
+      g.fillRect(ux + cx2, uy - 18, 24, 14);
+      g.fillRect(ux + cx2 + 2, uy - 30, 5, 12);
+      g.fillRect(ux + cx2 + 17, uy - 30, 5, 12);
+    });
+
+    [ox + 340, ox + 540, ox + 700, ox + 900].forEach(lx => {
+      const lby = floorY - 52;
+      g.fillStyle(0x505868, 1); g.fillRect(lx - 2, lby - 36, 4, 36);
+      g.fillStyle(C.winOn, 0.7); g.fillEllipse(lx, lby - 40, 11, 8);
+      g.fillStyle(C.winGlow, 0.06); g.fillCircle(lx, lby - 40, 26);
+    });
+
+    const sbX = ox + wallW - 72;
+    const sbY = floorY - 54;
+    g.fillStyle(0x163820, 1); g.fillEllipse(sbX, sbY, 106, 64);
+    g.fillStyle(0x1c4428, 1); g.fillEllipse(sbX - 26, sbY - 10, 68, 48);
+    g.fillStyle(0x204e2e, 1); g.fillEllipse(sbX + 22, sbY - 8, 56, 42);
+
+    const sbGlow = this.add.rectangle(sbX, sbY, 106, 64, 0x44ff88, 0.04).setDepth(2);
+    this.tweens.add({ targets: sbGlow, alpha: { from: 0.02, to: 0.07 }, duration: 2400, yoyo: true, repeat: -1 });
+
+    this.createDoor(sbX - 28, '002', 'Phase3Scene');
   }
 
   // ── Transição Fake 3D ─────────────────────────────
   transitionWall(direction) {
-
-    console.log('transitionWall chamada:', direction); // ADD
+    console.log('transitionWall chamada:', direction);
 
     if (this.passingThrough) return;
     this.passingThrough = true;
 
     const goingRight = direction === 'right';
     const nextWall = goingRight ? this.currentWall + 1 : this.currentWall - 1;
-    const wallStartX = (nextWall - 1) * 1400;
-    const spawnX = goingRight ? wallStartX + 120 : wallStartX + 1280;
 
     this.player.body.setVelocity(0, 0);
     this.player.body.setAllowGravity(false);
@@ -1923,23 +2221,23 @@ buildPantryWall() {
     });
 
     this.time.delayedCall(400, () => {
-      // PASSO 1: atualiza a parede atual primeiro
       this.currentWall = nextWall;
 
-      // PASSO 2: recalcula as posições com base na parede correta
       const wallStartX = (this.currentWall - 1) * 1400;
       const spawnX = goingRight ? wallStartX + 120 : wallStartX + 1280;
 
-      // PASSO 3: move o player para a nova posição
+      // Atualiza hitbox do player conforme a parede
+      if (this.currentWall === 4) {
+        this.player.body.setSize(24, 40);
+      } else {
+        this.player.body.setSize(36, 60);
+      }
+
       this.player.setPosition(spawnX, this.floorY - 80);
 
-      // PASSO 4: atualiza os bounds da câmera para a nova parede
       this.cameras.main.setBounds(wallStartX, 0, 1400, GAME_H);
-
-      // PASSO 5: centraliza a câmera no player
       this.cameras.main.centerOn(spawnX, GAME_H / 2);
 
-      // PASSO 6: zoom de saída (já existia)
       this.tweens.add({
         targets: this.cameras.main,
         zoom: { from: 1.06, to: 1.0 },
@@ -1947,7 +2245,6 @@ buildPantryWall() {
         ease: 'Sine.easeOut'
       });
 
-      // PASSO 7: reativa física e câmera (já existia)
       this.player.body.setAllowGravity(true);
       this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
       this.cameras.main.fadeIn(400, 0, 0, 0);
@@ -2035,65 +2332,136 @@ buildPantryWall() {
     }
   }
 
+  // ─── VERIFICA E ABRE GAVETAS ──────────────────────
   checkDrawers() {
     for (let d of this.drawers) {
       if (d.searched) continue;
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, d.zone.x, d.zone.y);
-      if (dist < 70 * this.s) {
-        d.searched = true;
-        this.sound.play('som_gaveta', { volume: 1.2 });
-        const x = d.zone.x - 42, ch = 75;
-        const dg = this.add.graphics().setDepth(3);
+      if (dist > 70 * this.s) continue;
+
+      d.searched = true;
+      this.sound.play('som_gaveta', { volume: 1.2 });
+
+      const dg = this.add.graphics().setDepth(3);
+      const { dx, dy, dw, dh } = d;
+
+      if (d.wall === 1) {
+        // Gaveta cozinha (ch=75) — animação de abrir
         dg.fillStyle(0x888898);
-        dg.fillRect(x + 2, this.floorY - ch + 5, 81, (ch - 10) / 2);
+        dg.fillRect(dx + 2, dy, dw - 2, dh * 0.45);           // frente da gaveta aberta
         dg.fillStyle(0xd8e0e8);
-        dg.fillRect(x + 2, this.floorY - ch + 22, 81, (ch - 10) / 2);
+        dg.fillRect(dx + 2, dy + dh * 0.45, dw - 2, dh * 0.55); // interior
         dg.fillStyle(0xb8c4cc);
-        dg.fillRect(x + 2, this.floorY - ch + 7 + (ch - 10) / 2, 81, (ch - 12) / 2);
+        dg.fillRect(dx + 2, dy + dh * 0.55, dw - 2, dh * 0.45); // fundo
         dg.lineStyle(1, 0xa8b4c0);
-        dg.strokeRect(x + 2, this.floorY - ch + 22, 81, (ch - 10) / 2);
-        dg.strokeRect(x + 2, this.floorY - ch + 7 + (ch - 10) / 2, 81, (ch - 12) / 2);
+        dg.strokeRect(dx + 2, dy + dh * 0.45, dw - 2, dh * 0.55);
         dg.fillStyle(0x9898a8);
-        dg.fillRect(x + 26, this.floorY - ch + 35, 34, 4);
-        if (d.hasKey) {
-          this.keyFound = false;
-          const keyX = d.zone.x, keyY = this.floorY - ch + 16;
-          const kg = this.add.graphics().setDepth(4);
-          kg.fillStyle(0xffdd44, 0.9); kg.fillCircle(keyX, keyY, 8);
-          kg.fillStyle(0xffaa00); kg.fillCircle(keyX, keyY, 5);
-          kg.fillRect(keyX + 2, keyY, 18, 4);
-          kg.fillRect(keyX + 14, keyY + 4, 4, 4);
-          kg.fillRect(keyX + 18, keyY + 4, 4, 4);
-          const glow = this.add.rectangle(keyX, keyY, 24, 24, 0xffdd44, 0.06).setDepth(3);
-          this.tweens.add({ targets: glow, alpha: { from: 0.02, to: 0.1 }, duration: 800, yoyo: true, repeat: -1 });
-          this.keyZone = this.add.zone(keyX, keyY, 24, 24).setDepth(4);
-          this.physics.add.existing(this.keyZone, true);
-          this.keyZone.body.setSize(24, 24);
-          this.keyGfx = kg;
-          this.keyGlow = glow;
-          this.physics.add.overlap(this.player, this.keyZone, () => this.collectKey());
-        }
-        return;
+        dg.fillRect(dx + dw / 2 - 17, dy + dh * 0.6, 34, 4);   // puxador
+
+      } else if (d.wall === 2) {
+        // Gaveta fogão (chNew=95) — gavetas menores ao lado
+        dg.fillStyle(0x888898);
+        dg.fillRect(dx, dy, dw, dh * 0.45);
+        dg.fillStyle(0xd8d4cc);
+        dg.fillRect(dx + 2, dy + dh * 0.45, dw - 4, dh * 0.55);
+        dg.fillStyle(0xb8c0c8);
+        dg.fillRect(dx + 2, dy + dh * 0.6, dw - 4, dh * 0.4);
+        dg.lineStyle(1, 0xa8b0b8);
+        dg.strokeRect(dx + 2, dy + dh * 0.45, dw - 4, dh * 0.55);
+        dg.fillStyle(0xa8b0b8);
+        dg.fillRect(dx + dw / 2 - 14, dy + dh * 0.65, 28, 5);
+        dg.fillStyle(0xb8c0c8);
+        dg.fillRect(dx + dw / 2 - 16, dy + dh * 0.63, 32, 3);
+
+      } else if (d.wall === 3) {
+        // Gaveta bancada direita (chR=100)
+        dg.fillStyle(0x888898);
+        dg.fillRect(dx, dy, dw, dh * 0.45);
+        dg.fillStyle(0xd8d4cc);
+        dg.fillRect(dx + 2, dy + dh * 0.45, dw - 4, dh * 0.55);
+        dg.fillStyle(0xb8c0c8);
+        dg.fillRect(dx + 2, dy + dh * 0.6, dw - 4, dh * 0.4);
+        dg.lineStyle(1, 0xa8b0b8);
+        dg.strokeRect(dx + 2, dy + dh * 0.45, dw - 4, dh * 0.55);
+        dg.fillStyle(0xb0b8c0);
+        dg.fillRect(dx + dw / 2 - 16, dy + dh * 0.65, 32, 6);
+        dg.fillStyle(0xd0d8e0);
+        dg.fillRect(dx + dw / 2 - 18, dy + dh * 0.63, 36, 3);
+        dg.fillStyle(0xa0a8b0);
+        dg.fillRect(dx + dw / 2 - 18, dy + dh * 0.63, 5, 9);
+        dg.fillRect(dx + dw / 2 + 13, dy + dh * 0.63, 5, 9);
       }
+
+      // Se essa gaveta tem a chave — spawn visual + guarda coordenadas para checagem no update
+      if (d.hasKey) {
+        const keyX = dx + dw / 2;
+        const keyY = dy + dh * 0.5;
+
+        const kg = this.add.graphics().setDepth(4);
+        kg.fillStyle(0xffdd44, 0.9); kg.fillCircle(keyX, keyY, 8);
+        kg.fillStyle(0xffaa00); kg.fillCircle(keyX, keyY, 5);
+        kg.fillRect(keyX + 2, keyY, 18, 4);
+        kg.fillRect(keyX + 14, keyY + 4, 4, 4);
+        kg.fillRect(keyX + 18, keyY + 4, 4, 4);
+
+        const glow = this.add.rectangle(keyX, keyY, 24, 24, 0xffdd44, 0.06).setDepth(3);
+        this.tweens.add({ targets: glow, alpha: { from: 0.02, to: 0.1 }, duration: 800, yoyo: true, repeat: -1 });
+
+        // Guarda posição mundial — coleta verificada por distância no update()
+        this.keyGfx = kg;
+        this.keyGlow = glow;
+        this.keyWorldX = null;
+        this.keyWorldY = null;
+        this.time.delayedCall(800, () => {
+          this.keyWorldX = keyX;
+          this.keyWorldY = keyY;
+        });
+      }
+
+      return;
     }
   }
 
   handleInteract() {
     if (this.transitioning) return;
+
+    if (this.inWardrobe) {
+      for (let w of this.wardrobes) {
+        if (this.isNear(w, 120)) {
+          this.inWardrobe = false;
+          this.player.body.setAllowGravity(true);
+          this.tweens.add({ targets: this.playerGfx, alpha: 1, duration: 200 });
+          this.tweens.add({ targets: this.playerShadow, alpha: 1, duration: 200 });
+          return;
+        }
+      }
+      return;
+    }
+
     if (this.isNear(this.doorZone)) {
       if (!this.keyFound) { this.showLockedMessage(); return; }
       this.sound.play('som_porta', { volume: 1.2, seek: 0.5 });
       this.transitionTo(this.doorDestination);
       return;
     }
+
     for (let w of this.wardrobes) {
       if (this.isNear(w)) {
         this.inWardrobe = !this.inWardrobe;
         this.player.body.setAllowGravity(!this.inWardrobe);
-        if (this.inWardrobe) this.player.body.setVelocity(0, 0);
+
+        if (this.inWardrobe) {
+          this.player.body.setVelocity(0, 0);
+          this.tweens.add({ targets: this.playerGfx, alpha: 0, duration: 200 });
+          this.tweens.add({ targets: this.playerShadow, alpha: 0, duration: 200 });
+        } else {
+          this.tweens.add({ targets: this.playerGfx, alpha: 1, duration: 200 });
+          this.tweens.add({ targets: this.playerShadow, alpha: 1, duration: 200 });
+        }
         return;
       }
     }
+
     this.checkDrawers();
   }
 
@@ -2101,22 +2469,26 @@ buildPantryWall() {
     super.update();
     if (this.transitioning) return;
 
-    // ADD — remove depois
-    console.log('player.x:', Math.floor(this.player.x), '| wall:', this.currentWall, '| zone1to2.x:', this.zoneW1toW2.x);
+    // Bug 1: se estiver escondido, cancela qualquer velocidade que o super.update() aplicou via input
+    if (this.inWardrobe) {
+      this.player.body.setVelocity(0, 0);
+    }
 
-    // Jeremiah patrulha por todo o mundo (0 → 4200)
-    if (!this.inWardrobe) {
-      this.jeremiah.body.setVelocityX(this.jeremiahSpeed * this.jeremiahDir);
-      if (this.jeremiah.x > 4150 || this.jeremiah.x < 50) {
-        this.jeremiahDir *= -1;
-        this.jeremiah.x = Phaser.Math.Clamp(this.jeremiah.x, 51, 4149);
-      }
-    } else {
-      this.jeremiah.body.setVelocityX(0);
+    // Jeremiah patrulha por todo o mundo (0 → 4200) — sempre, independente do armário
+    this.jeremiah.body.setVelocityX(this.jeremiahSpeed * this.jeremiahDir);
+    if (this.jeremiah.x > 4150 || this.jeremiah.x < 50) {
+      this.jeremiahDir *= -1;
+      this.jeremiah.x = Phaser.Math.Clamp(this.jeremiah.x, 51, 4149);
     }
 
     this.drawJeremiah();
     this.checkJeremiah();
+
+    // Bug 3: checagem de coleta da chave por distância (funciona em qualquer wall)
+    if (!this.keyFound && this.keyWorldX !== null && this.keyWorldX !== undefined) {
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.keyWorldX, this.keyWorldY);
+      if (dist < 100) this.collectKey();
+    }
 
     // Detecção de transição entre paredes
     if (!this.passingThrough) {
@@ -2128,10 +2500,14 @@ buildPantryWall() {
         this.transitionWall('right');
       } else if (this.currentWall === 3 && this.player.x <= 2850) {
         this.transitionWall('left');
+      } else if (this.currentWall === 3 && this.player.x >= 4160) {
+        this.transitionWall('right');
+      } else if (this.currentWall === 4 && this.player.x <= 4240) {
+        this.transitionWall('left');
       }
     }
 
-    // Prompts
+    // Prompts contextuais
     const nearWardrobe = this.wardrobes.some(w => this.isNear(w));
     const nearDrawer = this.drawers.some(d => !d.searched && this.isNear(d.zone));
     const nearDoor = this.isNear(this.doorZone);
@@ -3721,7 +4097,7 @@ class Phase5Scene extends BaseScene {
     this.screechDerrotado = false;
     this.portaAberta = false;
     this.tempoPassado = 0;
-    this.tempoLimite = 30000; // 1º ataque em 30s
+    this.tempoLimite = 15000; // 1º ataque em 30s
     this.cicloAtaque = 0;     // conta quantos ataques já ocorreram
     this.punicaoAplicada = false;
     this.bauAberto = false;
@@ -3985,29 +4361,14 @@ class Phase5Scene extends BaseScene {
     g.fillStyle(0x8855aa, 0.5);
     g.fillRect(bx + 3, by + 22, 38, 26);
 
-    // 🔥 CRIAR A CHAVE VISUAL DENTRO DO BAÚ 🔥
+    
     // Chamar o método da BaseScene para criar a chave
     this.createHiddenKey(bx + 22, by + 35);
 
     // A chave agora aparece e o jogador precisa passar por cima para pegar
     // (o método createHiddenKey já configura tudo: visual, brilho, zona de coleta)
 
-    // Mensagem indicando que a chave apareceu
-    const msg = this.add.text(GAME_W / 2, GAME_H / 2 - 40, TEXTS.KEY_FOUND, {
-      fontSize: '18px',
-      fontFamily: 'Courier New',
-      color: '#ffdd44',
-      stroke: '#000000',
-      strokeThickness: 3
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(30);
-
-    this.tweens.add({
-      targets: msg,
-      y: msg.y - 30,
-      alpha: 0,
-      duration: 2000,
-      onComplete: () => msg.destroy()
-    });
+  
   }
   // ── SCREECH ───────────────────────────────────────────────
   criarScreech() {
@@ -4047,6 +4408,15 @@ class Phase5Scene extends BaseScene {
 
     this.handleMovement();
     this.drawPlayer();
+    // após this.handleMovement() e this.drawPlayer()
+    if (!this.keyFound && this.keyZone) {
+      const dist = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y,
+        this.keyZone.x, this.keyZone.y
+      );
+
+      if (dist < 60) this.collectKey();
+    }
 
     if (!this.screechDerrotado) {
       this.moverScreech(delta);
@@ -4297,15 +4667,12 @@ class FinalScene extends BaseScene {
       { col: 27, row: 21 }, // último — perto da porta, área mais perigosa
     ];
 
-    // Os 5 dígitos que formam a senha final
-    this.DOOR_CODES = ["4", "7", "2", "9", "1"];
-
     this.CODE_BOOK_DATA = [
-      { title: "Tomo Vermelho I", code: this.DOOR_CODES[0] },
-      { title: "Tomo Vermelho II", code: this.DOOR_CODES[1] },
-      { title: "Tomo Vermelho III", code: this.DOOR_CODES[2] },
-      { title: "Tomo Vermelho IV", code: this.DOOR_CODES[3] },
-      { title: "Tomo Vermelho V", code: this.DOOR_CODES[4] },
+      { code: "4" },
+      { code: "7" },
+      { code: "2" },
+      { code: "9" },
+      { code: "1" },
     ];
 
     // Posições dos livros comuns (sem código — apenas atmosfera)
@@ -4346,8 +4713,6 @@ class FinalScene extends BaseScene {
     this.FIGURE_CHASE_SPEED = 6.8;
     this.FIGURE_HEAR_RADIUS = 6;
     this.FIGURE_KILL_RADIUS = 1;
-    this.HEARTBEAT_MIN_DIST = 10;
-    this.HEARTBEAT_MAX_DIST = 4;
     this.SOUND_MOVE_LEVEL = 1.0;
     this.SOUND_IDLE_LEVEL = 0.0;
   }
@@ -4621,7 +4986,7 @@ class FinalScene extends BaseScene {
   createBooks() {
     this.bookObjects = [];
 
-    // Tomos com código (vermelhos)
+    // Tomos com código 
     this.CODE_BOOK_DATA.forEach((data, i) => {
       const pos = this.CODE_POSITIONS[i];
       this.spawnBook(pos.col, pos.row, true, data);
@@ -4634,10 +4999,12 @@ class FinalScene extends BaseScene {
   }
 
   spawnBook(col, row, isCode, data) {
-    const { x, y } = this.tileToPixel(col, row);
-    const color = isCode ? 0xcc2222 : 0x335599;
-    const glowColor = isCode ? 0xff5544 : 0x4466cc;
+    // não spawna se o tile for parede
+    if (!this.isWalkable(col, row)) return;
 
+    const { x, y } = this.tileToPixel(col, row);
+    const color = 0x335599;
+    const glowColor = 0x4466cc;
     const g = this.add.graphics().setDepth(5);
     // Livro
     g.fillStyle(color);
@@ -4804,12 +5171,11 @@ class FinalScene extends BaseScene {
     this.inputBlocked = true;
 
     if (isCode && bookData) {
-      this.bookTitle.setText(bookData.title);
-      this.bookContent.setText(bookData.content);
+      this.bookTitle.setText(`CÓDIGO ${codeIndex + 1} DE 5`);
+      this.bookContent.setText('');
       this.bookCodeText.setText(bookData.code).setVisible(true);
-      this.bookCodeLabel.setText(`CÓDIGO ${codeIndex + 1} DE 5`).setVisible(true);
+      this.bookCodeLabel.setText('').setVisible(false);
     } else {
-      // Livro comum — página em branco
       this.bookTitle.setText('...');
       this.bookContent.setText('');
       this.bookCodeText.setVisible(false);
@@ -4947,6 +5313,11 @@ class FinalScene extends BaseScene {
     // Porta?
     if (col === this.doorTile.col && row === this.doorTile.row) {
       this.tryEnterDoor();
+    }
+
+    // Figure no mesmo tile?
+    if (col === this.figure.col && row === this.figure.row) {
+      this._figureKillPlayer();
     }
   }
 
@@ -5128,11 +5499,6 @@ class FinalScene extends BaseScene {
     // Tecla R para reiniciar após morte
     this.rKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
 
-    // Batimento cardíaco (volume controlado por proximidade)
-    this.heartbeatPlaying = false;
-    this.heartbeatInterval = null;
-    this.lastHeartbeatDist = 999;
-
     // Inicializa o primeiro destino de patrulha
     this._figureNextPatrolTarget();
   }
@@ -5204,62 +5570,12 @@ class FinalScene extends BaseScene {
     return dist <= hearThreshold;
   }
 
-  // ── Atualiza o batimento cardíaco ─────────────────────────────
-  _updateHeartbeat() {
-    const dist = this._figureDist();
-
-    // Fora do alcance — para o batimento
-    if (dist > this.HEARTBEAT_MIN_DIST) {
-      if (this.heartbeatInterval) {
-        clearInterval(this.heartbeatInterval);
-        this.heartbeatInterval = null;
-        this.heartbeatPlaying = false;
-      }
-      return;
-    }
-
-    // Calcula intervalo com base na distância (mais perto = mais rápido)
-    const t = 1 - Phaser.Math.Clamp((dist - this.HEARTBEAT_MAX_DIST) / (this.HEARTBEAT_MIN_DIST - this.HEARTBEAT_MAX_DIST), 0, 1);
-    const interval = Phaser.Math.Linear(1800, 350, t); // ms entre batidas
-
-    // Recria o interval apenas se a distância mudou significativamente
-    if (Math.abs(dist - this.lastHeartbeatDist) > 1 || !this.heartbeatPlaying) {
-      if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
-
-      this.heartbeatPlaying = true;
-      this.lastHeartbeatDist = dist;
-
-      const playBeat = () => {
-        if (!this.sound || this.transitioning) return;
-        // Usa o som de porta como "batida" com pitch baixo — adapte se tiver som próprio
-        try {
-          const vol = Phaser.Math.Linear(0.05, 0.45, t);
-          // som: batimento cardíaco — substitua pelo áudio correto
-        } catch (e) { }
-      };
-
-      playBeat();
-      this.heartbeatInterval = setInterval(() => {
-        if (!this.scene.isActive('FinalScene')) {
-          clearInterval(this.heartbeatInterval);
-          return;
-        }
-        playBeat();
-      }, interval);
-    }
-  }
 
   // ── Mata o player ─────────────────────────────────────────────
   _figureKillPlayer() {
     if (this.playerDead || this.transitioning) return;
     this.playerDead = true;
     this.inputBlocked = true;
-
-    // Para batimento
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
 
     // Jumpscare — som + flash vermelho
     // som: jumpscare/grito do Figure — substitua pelo áudio correto
@@ -5363,9 +5679,9 @@ class FinalScene extends BaseScene {
         this._figureMoveAlongPath(this.FIGURE_CHASE_SPEED, dt);
 
         // Verifica se alcançou o player
-        if (this._figureDist() <= this.FIGURE_KILL_RADIUS) {
+        if (this._figureDist() <= this.FIGURE_KILL_RADIUS ||
+          (this.figure.col === this.playerTile.col && this.figure.row === this.playerTile.row)) {
           this._figureKillPlayer();
-          return;
         }
 
         // Perdeu de ouvir — vai para o último lugar ouvido
@@ -5399,8 +5715,6 @@ class FinalScene extends BaseScene {
         }
         break;
     }
-
-    this._updateHeartbeat();
     this._drawFigure();
 
     // Escurece a tela levemente quando o Figure está em chase
