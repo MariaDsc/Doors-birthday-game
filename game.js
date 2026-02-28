@@ -170,6 +170,7 @@ class BaseScene extends Phaser.Scene {
     });
 
     this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     this.eKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.eKey.on('down', () => this.handleInteract());
   }
@@ -433,7 +434,7 @@ class BaseScene extends Phaser.Scene {
   }
 }
 // =============================================
-//  CENA: BOOT (TELA DE TÍTULO) - CORRIGIDA
+//  CENA: BOOT (TELA DE TÍTULO)
 // =============================================
 class BootScene extends Phaser.Scene {
   constructor() { super({ key: 'BootScene' }); }
@@ -496,7 +497,7 @@ class BootScene extends Phaser.Scene {
 
     this.input.keyboard.once('keydown', () => {
       this.cameras.main.fadeOut(600, 0, 0, 0);
-      this.time.delayedCall(620, () => this.scene.start('Phase3Scene'));
+      this.time.delayedCall(620, () => this.scene.start('Phase2Scene'));
     });
   }
 
@@ -717,22 +718,22 @@ class Phase1Scene extends BaseScene {
 class Phase2Scene extends BaseScene {
   constructor() {
     super('Phase2Scene');
-    this.worldWidth = 5100; // 3400 * 1.5
-    this.s = 1.5; // fator de escala global
+    this.worldWidth = 4200; // 3 paredes de 1400 cada
+    this.s = 1.5;
   }
 
   init() {
     super.init();
-    this.worldWidth = 5100;
-    this.floorY = GAME_H - 30; // ajustado para escala 1.5
+    this.worldWidth = 4200;
+    this.floorY = GAME_H - 30;
     this.passingThrough = false;
+    this.currentWall = 1; // parede atual: 1, 2 ou 3
   }
 
   create() {
     super.create();
-    // Aumenta o player só nessa fase (escala 1.5)
-    this.player.body.setSize(36, 60); // 24*1.5 = 36, 40*1.5 = 60
-    this.player.setPosition(80 * this.s, this.floorY - 50 * this.s);
+    this.player.body.setSize(36, 60);
+    this.player.setPosition(80, this.floorY - 50);
     GameState.door = 2;
     GameState.updateUI();
     this.showPhaseTitle(TEXTS.PHASE_2);
@@ -749,15 +750,31 @@ class Phase2Scene extends BaseScene {
     this.jeremiahLooking = false;
     this.hitCooldown = false;
     this.inWardrobe = false;
-    this.inPool = false;
-    this.inBush = false;
     this.keyFound = false;
 
-    this.buildKitchen();
-    this.buildGardenPool();
-    this.buildPier();
+    // ── As 3 paredes — cada uma ocupa exatamente 1400px ──
+    this.buildKitchen();    // X: 0    → 1400
+    this.buildStoveWall();  // X: 1400 → 2800
+    this.buildPantryWall(); // X: 2800 → 4200
+
+    // Porta de fase no FINAL da parede 3
+    this.createDoor(4050, '002', 'Phase3Scene');
+
+    // ── Zonas de transição nas bordas de cada parede ──
+    // Parede 1 → 2
+    this.zoneW1toW2 = this.add.zone(1390, this.floorY - 150, 10, 300);
+    this.physics.add.existing(this.zoneW1toW2, true);
+    // Parede 2 → 1
+    this.zoneW2toW1 = this.add.zone(1410, this.floorY - 150, 10, 300);
+    this.physics.add.existing(this.zoneW2toW1, true);
+    // Parede 2 → 3
+    this.zoneW2toW3 = this.add.zone(2790, this.floorY - 150, 10, 300);
+    this.physics.add.existing(this.zoneW2toW3, true);
+    // Parede 3 → 2
+    this.zoneW3toW2 = this.add.zone(2810, this.floorY - 150, 10, 300);
+    this.physics.add.existing(this.zoneW3toW2, true);
+
     this.createJeremiah();
-    this.createDoor(3330 * this.s, '002', 'Phase3Scene');
 
     this.physics.add.collider(this.player, this.platforms);
     this.physics.add.collider(this.jeremiah, this.platforms);
@@ -768,43 +785,36 @@ class Phase2Scene extends BaseScene {
     const y = this.player.y;
     const g = this.playerGfx;
     g.clear();
-
-    // Escala 1.5 (igual ao corpo da física)
     const s = 1.5;
-
     this.playerShadow.clear();
     this.playerShadow.fillStyle(0x000000, 0.25);
     this.playerShadow.fillEllipse(x, this.floorY - 2, 50 * s, 14 * s);
-
     g.fillStyle(COLORS.player);
-    g.fillRect(x - 15 * s, y - 55 * s, 30 * s, 40 * s);  // corpo
-    g.fillRect(x - 13 * s, y - 82 * s, 26 * s, 26 * s);  // cabeça
-
+    g.fillRect(x - 15 * s, y - 55 * s, 30 * s, 40 * s);
+    g.fillRect(x - 13 * s, y - 82 * s, 26 * s, 26 * s);
     g.fillStyle(COLORS.playerEye);
     const eyeX = this.facingLeft ? x - 7 * s : x + 3 * s;
-    g.fillRect(eyeX, y - 75 * s, 6 * s, 6 * s);  // olhos
-
+    g.fillRect(eyeX, y - 75 * s, 6 * s, 6 * s);
     g.fillStyle(COLORS.player, 0.8);
-    g.fillRect(x - 12 * s, y - 14 * s, 10 * s, 16 * s);  // perna esq
-    g.fillRect(x + 2 * s, y - 14 * s, 10 * s, 16 * s);   // perna dir
-    g.fillRect(x - 20 * s, y - 52 * s, 7 * s, 28 * s);   // braço esq
-    g.fillRect(x + 13 * s, y - 52 * s, 7 * s, 28 * s);   // braço dir
+    g.fillRect(x - 12 * s, y - 14 * s, 10 * s, 16 * s);
+    g.fillRect(x + 2 * s, y - 14 * s, 10 * s, 16 * s);
+    g.fillRect(x - 20 * s, y - 52 * s, 7 * s, 28 * s);
+    g.fillRect(x + 13 * s, y - 52 * s, 7 * s, 28 * s);
   }
 
-  // ─── COZINHA ──────────────────────────────────────
+  // ─── PAREDE 1: COZINHA  (X: 0 → 1400) ────────────
   buildKitchen() {
     const g = this.add.graphics().setDepth(1);
-    const s = this.s;
     const ch = 75;
     const topMargin = 55;
 
-    // ── PAREDE ───────────────────────────────────────
+    // PAREDE
     g.fillStyle(0xadebb3);
     g.fillRect(0, 0, 1400, GAME_H);
     g.fillStyle(0x081828, 0.55);
     g.fillRect(0, 0, 1400, GAME_H);
 
-    // ── TETO ─────────────────────────────────────────
+    // TETO
     g.fillStyle(0xc8d4dc);
     g.fillRect(0, 0, 1400, 22);
     [120, 340, 560, 780, 1000, 1220].forEach(x => {
@@ -812,17 +822,16 @@ class Phase2Scene extends BaseScene {
       g.fillRect(x, 0, 20, 22);
     });
 
-    // ── CHÃO ─────────────────────────────────────────
+    // CHÃO
     g.fillStyle(0x0a0806);
     g.fillRect(0, this.floorY, 1400, 8);
     g.fillStyle(0x060504, 0.9);
     g.fillRect(0, this.floorY + 8, 1400, 72);
-
     const floor = this.add.rectangle(700, this.floorY + 30, 1400, 60).setVisible(false);
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
-    // ── ARMÁRIO ALTO ESQUERDO ────────────────────────
+    // ARMÁRIO ALTO ESQUERDO
     g.fillStyle(0xd8e0e8);
     g.fillRect(0, 22, 140, this.floorY - 22);
     g.lineStyle(1, 0xc0ccd4);
@@ -839,13 +848,11 @@ class Phase2Scene extends BaseScene {
     g.fillStyle(0x081828, 0.2);
     g.fillRect(135, 22, 8, this.floorY - 22);
 
-    // ── ARMÁRIO AÉREO ESQUERDO ───────────────────────
+    // ARMÁRIO AÉREO ESQUERDO
     const aereoY = topMargin + 35;
     const aereoH = 210;
     g.fillStyle(0xd8e0e8);
-    g.fillRect(142, aereoY, 380, aereoH); // corpo do armário
-
-    // trapézio fino em cima do armário esquerdo
+    g.fillRect(142, aereoY, 380, aereoH);
     const trapHEsq = 20;
     g.fillStyle(0xd8e0e8);
     g.fillPoints([
@@ -854,30 +861,19 @@ class Phase2Scene extends BaseScene {
       { x: 142 + 380, y: aereoY },
       { x: 142, y: aereoY }
     ], true);
-
-    // vidros (4 colunas x 3 linhas)
-    const totalCols = 4;
-    const totalRows = 3;
-    const padX = 10;
-    const padYTop = 26;
-    const padYBot = 16;
-    const gapX = 8;
-    const gapY = 3;
+    const totalCols = 4, totalRows = 3;
+    const padX = 10, padYTop = 26, padYBot = 16, gapX = 8, gapY = 3;
     const vw = (380 - padX * 2 - gapX * (totalCols - 1)) / totalCols;
     const vh = (aereoH - padYTop - padYBot - gapY * (totalRows - 1)) / totalRows;
-
     for (let col = 0; col < totalCols; col++) {
       for (let row = 0; row < totalRows; row++) {
         const vx = 142 + padX + col * (vw + gapX);
         const vy = aereoY + padYTop + row * (vh + gapY);
-
         g.fillStyle(0x050e1c, 0.35);
         if (row === 0 && col === 0) {
-          // vidro superior esquerdo — arredonda só o canto esquerdo
           g.fillRoundedRect(vx, vy, vw, vh, { tl: 26, tr: 0, bl: 0, br: 0 });
           g.strokeRoundedRect(vx, vy, vw, vh, { tl: 26, tr: 0, bl: 0, br: 0 });
         } else if (row === 0 && col === totalCols - 1) {
-          // vidro superior direito — arredonda só o canto direito
           g.fillRoundedRect(vx, vy, vw, vh, { tl: 0, tr: 26, bl: 0, br: 0 });
           g.strokeRoundedRect(vx, vy, vw, vh, { tl: 0, tr: 26, bl: 0, br: 0 });
         } else {
@@ -885,34 +881,21 @@ class Phase2Scene extends BaseScene {
           g.lineStyle(1, 0xc8d4dc);
           g.strokeRect(vx, vy, vw, vh);
         }
-
-        // borda do vidro
         g.lineStyle(1, 0xc8d4dc);
-        if (row === 0) {
-          g.strokeRoundedRect(vx, vy, vw, vh, { tl: 5, tr: 5, bl: 0, br: 0 });
-        } else {
-          g.strokeRect(vx, vy, vw, vh);
-        }
+        if (row === 0) g.strokeRoundedRect(vx, vy, vw, vh, { tl: 5, tr: 5, bl: 0, br: 0 });
+        else g.strokeRect(vx, vy, vw, vh);
       }
     }
-
-    // moldura externa da porta
     g.lineStyle(2, 0xb8c4cc);
     g.strokeRect(142 + 4, aereoY + 4, 380 - 8, aereoH - 8);
-
-    // pés do armário
     g.fillStyle(0x8898a8);
-    g.fillRect(142, aereoY + aereoH, 5, 26);   // pé esquerdo
-    g.fillRect(517, aereoY + aereoH, 5, 26);   // pé direito
+    g.fillRect(142, aereoY + aereoH, 5, 26);
+    g.fillRect(517, aereoY + aereoH, 5, 26);
 
-    // ── JANELA CENTRAL ───────────────────────────────
+    // JANELA CENTRAL
     const winX = 560, winY = topMargin + 5, winW = 240, winH = 275;
-
-    // fundo da janela
     g.fillStyle(0x040b18);
     g.fillRect(winX, winY, winW, winH);
-
-    // estrelas
     [[570, winY + 12], [590, winY + 22], [614, winY + 8], [640, winY + 26],
     [666, winY + 14], [692, winY + 32], [718, winY + 10], [742, winY + 24],
     [570, winY + 75], [597, winY + 90], [630, winY + 65], [660, winY + 82],
@@ -920,37 +903,26 @@ class Phase2Scene extends BaseScene {
       g.fillStyle(0xffffff, 0.75);
       g.fillCircle(sx, sy, 1.5);
     });
-
-    // lua
+    g.fillStyle(0xfffde0);
     g.fillCircle(740, winY + 25, 18);
-
-    // árvores
     g.fillStyle(0x060e08);
     g.fillTriangle(562, winY + winH, 617, winY + winH, 589, winY + winH - 70);
     g.fillTriangle(600, winY + winH, 658, winY + winH, 629, winY + winH - 85);
     g.fillTriangle(677, winY + winH, 734, winY + winH, 705, winY + winH - 72);
     g.fillTriangle(717, winY + winH, 778, winY + winH, 747, winY + winH - 88);
-
-    // troncos
     g.fillRect(585, winY + winH - 82, 7, 82);
     g.fillRect(625, winY + winH - 98, 7, 98);
     g.fillRect(701, winY + winH - 84, 7, 84);
-
-    // moldura da janela
     g.fillStyle(0xd8e4ec);
     g.fillRect(winX - 10, winY - 8, winW + 20, 10);
     g.fillRect(winX - 10, winY + winH, winW + 20, 10);
     g.fillRect(winX - 10, winY - 8, 10, winH + 18);
     g.fillRect(winX + winW, winY - 8, 10, winH + 18);
-
-    // grades da janela
     g.fillRect(winX + winW / 2 - 4, winY, 8, winH);
     g.fillRect(winX + winW / 4 - 4, winY, 8, winH / 2 - 3);
     g.fillRect(winX + winW / 4 * 3 - 4, winY, 8, winH / 2 - 3);
     g.fillRect(winX, winY + winH / 2 - 3, winW, 6);
     g.fillStyle(0xc8d4dc);
-
-    // sombras no chão embaixo da janela
     g.fillRect(winX - 14, winY + winH + 10, winW + 28, 10);
     g.fillStyle(0x1a3820);
     g.fillCircle(winX + 22, winY + winH + 8, 11);
@@ -963,15 +935,9 @@ class Phase2Scene extends BaseScene {
     g.fillStyle(0x8ab0d0, 0.03);
     g.fillTriangle(winX + 40, winY + winH + 20, winX + winW - 40, winY + winH + 20, winX + winW / 2, this.floorY);
 
-    // ── ARMÁRIO AÉREO DIREITO ─────────────────────────
-    const shelf1X = 834;
-    const aereoHDir = 210;
-    const aereoYDir = aereoY;
-    const shelf1W = 160;
-    const trapH = 20;
-    const bodyY = aereoYDir + trapH; // armário desce para dar espaço ao trapézio
-
-    // trapézio fino em cima do armário
+    // ARMÁRIO AÉREO DIREITO
+    const shelf1X = 834, aereoHDir = 210, aereoYDir = aereoY, shelf1W = 160;
+    const trapH = 20, bodyY = aereoYDir + trapH;
     g.fillStyle(0xd8e0e8);
     g.fillPoints([
       { x: shelf1X - 14, y: aereoYDir },
@@ -979,77 +945,41 @@ class Phase2Scene extends BaseScene {
       { x: shelf1X + shelf1W, y: bodyY },
       { x: shelf1X, y: bodyY }
     ], true);
-
-    // corpo do armário
     g.fillRect(shelf1X, bodyY, shelf1W, aereoHDir);
-
-    // moldura sólida
     const frameT = 12;
     g.fillStyle(0xd8e0e8);
-    g.fillRect(shelf1X, bodyY, shelf1W, frameT);                       // topo
-    g.fillRect(shelf1X, bodyY + aereoHDir - frameT, shelf1W, frameT); // baixo
-    g.fillRect(shelf1X, bodyY, frameT, aereoHDir);                     // esquerda
-    g.fillRect(shelf1X + shelf1W - frameT, bodyY, frameT, aereoHDir); // direita
-
-    // divisória vertical central grossa
+    g.fillRect(shelf1X, bodyY, shelf1W, frameT);
+    g.fillRect(shelf1X, bodyY + aereoHDir - frameT, shelf1W, frameT);
+    g.fillRect(shelf1X, bodyY, frameT, aereoHDir);
+    g.fillRect(shelf1X + shelf1W - frameT, bodyY, frameT, aereoHDir);
     const divT = 20;
-    g.fillStyle(0xd8e0e8);
     g.fillRect(shelf1X + shelf1W / 2 - divT / 2, bodyY + frameT, divT, aereoHDir - frameT * 2);
-
-    // configuração dos vidros
-    const s1Cols = 2;
-    const s1Rows = 2;
-    const divTH = 2;
-    const s1GapX = 4;
-    const s1GapY = 4;
-
+    const s1Cols = 2, s1Rows = 2, divTH = 2, s1GapX = 4, s1GapY = 4;
     const groupW = (shelf1W - frameT * 2 - divT) / 2;
     const groupH = (aereoHDir - frameT * 2) / 2 - divTH / 2;
     const s1vw = (groupW - s1GapX * (s1Cols - 1)) / s1Cols;
     const s1vh = (groupH - s1GapY * (s1Rows - 1)) / s1Rows;
-
-    // divisória horizontal fina
     g.lineStyle(1, 0xc8d4dc);
     g.strokeRect(shelf1X + frameT, bodyY + aereoHDir / 2 - 1, shelf1W - frameT * 2, 1);
-
     [shelf1X + frameT, shelf1X + frameT + groupW + divT].forEach(groupX => {
-      // grupo de cima
-      for (let col = 0; col < s1Cols; col++) {
-        for (let row = 0; row < s1Rows; row++) {
-          const vx = groupX + col * (s1vw + s1GapX);
-          const vy = bodyY + frameT + row * (s1vh + s1GapY);
-          g.fillStyle(0x050e1c, 0.35);
-          g.fillRect(vx, vy, s1vw, s1vh);
-          g.lineStyle(1, 0xc8d4dc);
-          g.strokeRect(vx, vy, s1vw, s1vh);
-        }
+      for (let col = 0; col < s1Cols; col++) for (let row = 0; row < s1Rows; row++) {
+        const vx = groupX + col * (s1vw + s1GapX), vy = bodyY + frameT + row * (s1vh + s1GapY);
+        g.fillStyle(0x050e1c, 0.35); g.fillRect(vx, vy, s1vw, s1vh);
+        g.lineStyle(1, 0xc8d4dc); g.strokeRect(vx, vy, s1vw, s1vh);
       }
-
-      // grupo de baixo
-      for (let col = 0; col < s1Cols; col++) {
-        for (let row = 0; row < s1Rows; row++) {
-          const vx = groupX + col * (s1vw + s1GapX);
-          const vy = bodyY + aereoHDir / 2 + divTH / 2 + row * (s1vh + s1GapY);
-          g.fillStyle(0x050e1c, 0.35);
-          g.fillRect(vx, vy, s1vw, s1vh);
-          g.lineStyle(1, 0xc8d4dc);
-          g.strokeRect(vx, vy, s1vw, s1vh);
-        }
+      for (let col = 0; col < s1Cols; col++) for (let row = 0; row < s1Rows; row++) {
+        const vx = groupX + col * (s1vw + s1GapX), vy = bodyY + aereoHDir / 2 + divTH / 2 + row * (s1vh + s1GapY);
+        g.fillStyle(0x050e1c, 0.35); g.fillRect(vx, vy, s1vw, s1vh);
+        g.lineStyle(1, 0xc8d4dc); g.strokeRect(vx, vy, s1vw, s1vh);
       }
-
-      // linha exatamente no meio da segunda linha de baixo para cima
-      const row2Y = bodyY + aereoHDir / 2 + divTH / 2;
-      const midLineY = row2Y + s1vh / 2;
-      g.lineStyle(1, 0xc8d4dc);
-      g.strokeRect(groupX, midLineY, groupW, 1);
+      const midLineY = bodyY + aereoHDir / 2 + divTH / 2 + s1vh / 2;
+      g.lineStyle(1, 0xc8d4dc); g.strokeRect(groupX, midLineY, groupW, 1);
     });
-
-    // pés do armário
     g.fillStyle(0x8898a8);
     g.fillRect(shelf1X, bodyY + aereoHDir, 5, 26);
     g.fillRect(shelf1X + shelf1W - 5, bodyY + aereoHDir, 5, 26);
 
-    // bancada termina antes da moldura
+    // BANCADA
     g.fillStyle(0xa8b4c0);
     g.fillRect(140, this.floorY - ch, 870, ch);
     g.fillStyle(0xbcc8d4);
@@ -1057,7 +987,7 @@ class Phase2Scene extends BaseScene {
     g.fillStyle(0x060e18, 0.3);
     g.fillRect(140, this.floorY - ch + 3, 870, 5);
 
-    // ── GAVETAS INTERATIVAS ───────────────────────────
+    // GAVETAS INTERATIVAS
     [155, 248, 342, 436].forEach((x, i) => {
       g.fillStyle(0xd8e0e8);
       g.fillRect(x, this.floorY - ch + 5, 85, ch - 8);
@@ -1075,7 +1005,7 @@ class Phase2Scene extends BaseScene {
       this.drawers.push({ zone, hasKey: i === 2, searched: false });
     });
 
-    // ── ARMÁRIOS BAIXOS ───────────────────────────────
+    // ARMÁRIOS BAIXOS
     [540, 640, 740, 840, 940].forEach(x => {
       g.fillStyle(0xd8e0e8);
       g.fillRect(x + 3, this.floorY - ch + 5, 88, ch - 8);
@@ -1085,52 +1015,17 @@ class Phase2Scene extends BaseScene {
       g.fillRect(x + 36, this.floorY - ch + 26, 22, 4);
     });
 
-    // ── PIA ──────────────────────────────────────────
-    // torneira centralizada abaixo da janela
-    const tornX = winX + winW / 2;
-    const tornY = this.floorY - ch - 2;
-
-    // base da torneira
+    // PIA / TORNEIRA
+    const tornX = winX + winW / 2, tornY = this.floorY - ch - 2;
     g.fillStyle(0x9aaabb);
     g.fillRect(tornX - 14, tornY - 8, 28, 8);
-
-    // cano vertical
     g.fillRect(tornX - 3, tornY - 30, 6, 24);
-
-    // bico curvado (barra horizontal + ponta)
     g.fillRect(tornX - 3, tornY - 30, 22, 6);
     g.fillRect(tornX + 16, tornY - 30, 6, 14);
-
-    // alavanca
     g.fillStyle(0x7a8a9a);
     g.fillRect(tornX - 18, tornY - 28, 14, 4);
 
-    // ── MOLDURA DE PASSAGEM ───────────────────────────
-    const passX = 1080;
-    const passW = 250;
-    const pillarW = 18;
-
-    // pilares da moldura
-    g.fillStyle(0xd8e0e8);
-    g.fillRect(passX, topMargin, pillarW, this.floorY - topMargin);
-    g.fillRect(passX + passW - pillarW, topMargin, pillarW, this.floorY - topMargin);
-
-    // viga superior
-    g.fillRect(passX, topMargin, passW, 20);
-
-    // detalhe interno — sombra da passagem
-    g.fillStyle(0x040c18, 0.4);
-    g.fillRect(passX + pillarW, topMargin + 20, passW - pillarW * 2, this.floorY - topMargin - 20);
-
-    // borda interna da moldura
-    g.lineStyle(2, 0xb8c4cc);
-    g.strokeRect(passX + 4, topMargin + 4, passW - 8, this.floorY - topMargin - 4);
-
-    // zona de passagem cozinha → jardim
-    this.passageZone = this.add.zone(passX + passW / 2, this.floorY - ch / 2, passW - pillarW * 2, this.floorY);
-    this.physics.add.existing(this.passageZone, true);
-
-    // ── LUMINÁRIAS ────────────────────────────────────
+    // LUMINÁRIAS
     [240, 480, 720].forEach(x => {
       g.fillStyle(0x788898);
       g.fillRect(x, 22, 3, topMargin - 22);
@@ -1141,275 +1036,939 @@ class Phase2Scene extends BaseScene {
       g.fillStyle(0x8ab0cc, 0.05);
       g.fillTriangle(x - 60, topMargin + 26, x + 62, topMargin + 26, x + 1, this.floorY);
     });
+
+    // MOLDURA DE PASSAGEM (visual — a zona real é a zoneW1toW2)
+    const passX = 1080, passW = 320, pillarW = 18;
+    g.fillStyle(0xd8e0e8);
+    g.fillRect(passX, topMargin, pillarW, this.floorY - topMargin);
+    g.fillRect(passX + passW - pillarW, topMargin, pillarW, this.floorY - topMargin);
+    g.fillRect(passX, topMargin, passW, 20);
+    g.fillStyle(0x040c18, 0.4);
+    g.fillRect(passX + pillarW, topMargin + 20, passW - pillarW * 2, this.floorY - topMargin - 20);
+    g.lineStyle(2, 0xb8c4cc);
+    g.strokeRect(passX + 4, topMargin + 4, passW - 8, this.floorY - topMargin - 4);
   }
 
-  // ─── JARDIM + PISCINA ─────────────────────────────
-  // ─── JARDIM + PISCINA ─────────────────────────────
-  buildGardenPool() {
+  // ─── PAREDE 2: FOGÃO  (X: 1400 → 2800) ───────────
+  buildStoveWall() {
     const g = this.add.graphics().setDepth(1);
-    const s = this.s;
-    const startX = 1400;
+    const gFront = this.add.graphics().setDepth(2); // na frente do g normal
+    const floorY = this.floorY;
+    const topMargin = 55;
+    const ch = 75;
+    const counterTop = floorY - ch;   // 395
 
-    // Céu noturno
-    g.fillStyle(0x0a0f1a);
-    g.fillRect(startX, 0, 1400, GAME_H);
+    const ox = 1400;
+    const wallW = 1400;
+    const centerX = ox + wallW / 2;   // 2100
 
-    // Grama
-    g.fillStyle(0x1a3a1a);
-    g.fillRect(startX, this.floorY, 1400, 80 * s);
-    g.fillStyle(0x224422);
-    g.fillRect(startX, this.floorY, 1400, 4 * s);
+    // ── PAREDE ────────────────────────────────────────
+    g.fillStyle(0x8fa89a);
+    g.fillRect(ox, 0, wallW, floorY);
+    g.fillStyle(0x081828, 0.28);
+    g.fillRect(ox, 0, wallW, floorY);
 
-    // Física do chão jardim — cobre desde o início do jardim
-    const floor = this.add.rectangle(startX + 700, this.floorY + 30, 1400 * 2, 60).setVisible(false);
-    this.physics.add.existing(floor, true);
-    this.platforms.add(floor);
+    // ── TETO ──────────────────────────────────────────
+    g.fillStyle(0xd8e0e4);
+    g.fillRect(ox, 0, wallW, 22);
+    [ox + 120, ox + 340, ox + 560, ox + 780, ox + 1000, ox + 1220].forEach(x => {
+      g.fillStyle(0xc8d0d4); g.fillRect(x, 0, 20, 22);
+    });
 
-    // Lua
-    g.fillStyle(0xfffde0, 0.9);
-    g.fillCircle(startX + 200, 60, 35);
-    g.fillStyle(0xf5f0cc, 0.15);
-    g.fillCircle(startX + 200, 60, 55);
+    // ── CHÃO ──────────────────────────────────────────
+    g.fillStyle(0x3a2010);
+    g.fillRect(ox, floorY, wallW, 8);
+    g.fillStyle(0x2a1a0e, 0.9);
+    g.fillRect(ox, floorY + 8, wallW, 72);
+    const floor2 = this.add.rectangle(ox + wallW / 2, floorY + 30, wallW, 60).setVisible(false);
+    this.physics.add.existing(floor2, true);
+    this.platforms.add(floor2);
 
-    // Estrelas
-    for (let i = 0; i < 40; i++) {
-      const sx = startX + Phaser.Math.Between(0, 1400);
-      const sy = Phaser.Math.Between(0, 200);
-      g.fillStyle(0xffffff, Math.random() * 0.8 + 0.2);
-      g.fillCircle(sx, sy, Phaser.Math.Between(1, 2));
+    // ══════════════════════════════════════════════════
+    // MEDIDAS
+    // ══════════════════════════════════════════════════
+    const stoveW = 260;
+    const stoveX = centerX - stoveW / 2;
+    const hoodW = 360;
+    const hoodX = centerX - hoodW / 2;
+    const hoodTopY = topMargin + 22;
+    const hoodBodyH = 130;
+    const hoodTrapH = 12;
+    const hoodBotW = stoveW + 20;
+    const hoodBotX = centerX - hoodBotW / 2;
+    const hoodBotY = hoodTopY + hoodBodyH + hoodTrapH;
+
+    // Armários ao lado do hood
+    const sideAereoW = 110;
+    const sideAereoLX = hoodX - sideAereoW;
+    const sideAereoRX = hoodX + hoodW;
+
+    // Passagem 
+    const passW = 170;
+    const passLX = sideAereoLX - passW;
+    const passRX = sideAereoRX + sideAereoW;
+
+    // Armários externos altos
+    const extLX = ox;
+    const extLW = passLX - ox;
+    const extRX = passRX + passW;
+    const extRW = ox + wallW - extRX;
+
+    // ══════════════════════════════════════════════════
+    // ARMÁRIOS EXTERNOS ALTOS — 2 portas grandes empilhadas
+    // ══════════════════════════════════════════════════
+    [
+      { ex: extLX, ew: extLW, mirror: false },
+      { ex: extRX, ew: extRW, mirror: true }
+    ].forEach(({ ex, ew, mirror }) => {
+      if (ew <= 0) return;
+      const cabinetH = floorY - topMargin;
+
+      // Corpo do armário
+      g.fillStyle(0xeae6de);
+      g.fillRect(ex, topMargin, ew, cabinetH);
+      g.lineStyle(3, 0xc8c4b8);
+      g.strokeRect(ex + 4, topMargin + 4, ew - 8, cabinetH - 8);
+
+      // Faixa decorativa do topo (cornice)
+      g.fillStyle(0xeae6de);
+      g.fillRect(ex, topMargin, ew, 18);
+      g.lineStyle(2, 0xc8c4b8);
+      g.strokeRect(ex, topMargin, ew, 18);
+      g.fillStyle(0xe0dcd4);
+      g.fillRect(ex + 2, topMargin + 18, ew - 4, 4);
+
+      // 2 portas grandes empilhadas
+      const doorW = ew - 14;
+      const doorX = ex + 7;
+      const halfH = (cabinetH - 30) / 2;
+
+      // Porta superior
+      const door1Y = topMargin + 22;
+      g.fillStyle(0xe8e4dc);
+      g.fillRect(doorX, door1Y, doorW, halfH);
+      g.lineStyle(2, 0xc0bcb4);
+      g.strokeRect(doorX + 4, door1Y + 4, doorW - 8, halfH - 8);
+      g.lineStyle(1, 0xd0ccC4);
+      g.strokeRect(doorX + 10, door1Y + 10, doorW - 20, halfH - 20);
+
+      // puxador porta superior (centrado horizontalmente)
+      const ph1x = ex + ew / 2;
+      const ph1y = door1Y + halfH - 18;
+      g.fillStyle(0xa8b0b8);
+      g.fillRect(ph1x - 16, ph1y, 32, 6);
+      g.fillStyle(0xb8c0c8);
+      g.fillRect(ph1x - 18, ph1y - 3, 36, 4);
+
+      // Divisória entre portas
+      g.fillStyle(0xe0dcd4);
+      g.fillRect(ex + 4, topMargin + 22 + halfH, ew - 8, 6);
+
+      // Porta inferior
+      const door2Y = door1Y + halfH + 6;
+      const door2H = cabinetH - halfH - 30;
+      g.fillStyle(0xe8e4dc);
+      g.fillRect(doorX, door2Y, doorW, door2H);
+      g.lineStyle(2, 0xc0bcb4);
+      g.strokeRect(doorX + 4, door2Y + 4, doorW - 8, door2H - 8);
+      g.lineStyle(1, 0xd0ccC4);
+      g.strokeRect(doorX + 10, door2Y + 10, doorW - 20, door2H - 20);
+
+      // puxador porta inferior
+      const ph2y = door2Y + 16;
+      g.fillStyle(0xa8b0b8);
+      g.fillRect(ph1x - 16, ph2y, 32, 6);
+      g.fillStyle(0xb8c0c8);
+      g.fillRect(ph1x - 18, ph2y - 3, 36, 4);
+
+    });
+
+    // ══════════════════════════════════════════════════
+    // ARMÁRIOS AO LADO DO HOOD (vidro 2x2 em cima + porta sólida embaixo)
+    // ══════════════════════════════════════════════════
+    [
+      { ax: sideAereoLX, mirror: false },
+      { ax: sideAereoRX, mirror: true }
+    ].forEach(({ ax, mirror }) => {
+      const aw = sideAereoW;
+      const aH = (counterTop - topMargin) - 90;
+      const glassH = aH * 0.48;
+
+      // Corpo
+      gFront.fillStyle(0xeae6de);
+      gFront.fillRect(ax, topMargin, aw, aH);
+      gFront.lineStyle(2, 0xc8c4b8);
+      gFront.strokeRect(ax + 4, topMargin + 4, aw - 8, aH - 8);
+
+      // Cornice
+      gFront.fillStyle(0xe0dcd4);
+      gFront.fillRect(ax + 2, topMargin + 18, aw - 4, 3);
+
+      // Configuração dos 4 vidros
+      const vidroW = (aw - 40) / 2;   // margem nas laterais
+      const vidroH = (glassH - 40) / 2;// margem em cima/baixo
+      const inicioY = topMargin + 35;  // empurra mais pra baixo
+
+      // 4 quadrantes de vidro
+      for (let linha = 0; linha < 2; linha++) {
+        for (let coluna = 0; coluna < 2; coluna++) {
+          const x = ax + 16 + (coluna * (vidroW + 8)); // gap maior entre os vidros
+          const y = inicioY + (linha * (vidroH + 8));   // gap maior entre as linhas
+
+
+          gFront.fillStyle(0x8aaabb, 0.3);
+          gFront.fillRect(x, y, vidroW, vidroH);
+          gFront.lineStyle(1, 0xaabccc, 0.5);
+          gFront.strokeRect(x, y, vidroW, vidroH);
+        }
+      }
+
+
+      // Porta sólida inferior
+      const botY = topMargin + glassH + 15;
+      const botH = aH - glassH - 18;
+      gFront.fillStyle(0xe8e4dc);
+      gFront.fillRect(ax + 5, botY, aw - 10, botH);
+      gFront.lineStyle(2, 0xc8c4b8);
+      gFront.strokeRect(ax + 9, botY + 4, aw - 18, botH - 8);
+      gFront.lineStyle(1, 0xd8d4cc);
+      gFront.strokeRect(ax + 14, botY + 9, aw - 28, botH - 18);
+
+    });
+
+    // ══════════════════════════════════════════════════
+    // HOOD CENTRAL
+    // ══════════════════════════════════════════════════
+
+    // Cornija superior (atrás dos pratos)
+    const corniceH = 50;
+    const corniceW = hoodW;
+    const corniceX = hoodX;
+    const corniceY = topMargin - corniceH;
+    gFront.fillStyle(0xeae6de);
+    gFront.fillRect(corniceX, corniceY, corniceW, corniceH + 4);
+    // borda inferior saliente
+    gFront.fillStyle(0xc8c4bc);
+    gFront.fillRect(corniceX, topMargin - 4, corniceW, 4);
+
+    // Pilares e faixa de topo
+    gFront.fillStyle(0xeae6de);
+    gFront.fillRect(hoodX - sideAereoW - 10, topMargin, sideAereoW * 2 + hoodW + 20, 20);
+    gFront.fillRect(hoodX - sideAereoW - 10, topMargin, 10, floorY - topMargin);
+    gFront.fillRect(hoodX + hoodW + sideAereoW, topMargin, 10, floorY - topMargin);
+
+    // Corpo retangular
+    gFront.fillStyle(0xeae6de);
+    gFront.fillRect(hoodX, hoodTopY, hoodW, hoodBodyH);
+    gFront.lineStyle(4, 0xd0ccC4);
+    gFront.strokeRect(hoodX + 6, hoodTopY + 6, hoodW - 12, hoodBodyH - 12);
+    gFront.lineStyle(2, 0xd8d4cc);
+    gFront.strokeRect(hoodX + 14, hoodTopY + 14, hoodW - 28, hoodBodyH - 28);
+    gFront.fillStyle(0xe2ddd5);
+    gFront.fillRect(hoodX + 20, hoodTopY + 20, hoodW - 40, hoodBodyH - 40);
+
+    // 3 painéis rebaixados dentro do corpo
+    const pCount = 3;
+    const pMargin = 22;
+    const pGap = 8;
+    const pW = (hoodW - pMargin * 2 - pGap * (pCount - 1)) / pCount;
+    const pH = hoodBodyH - 32;
+    const pY = hoodTopY + 16;
+
+    for (let i = 0; i < pCount; i++) {
+      const px = hoodX + pMargin + i * (pW + pGap);
+      // sombra externa
+      gFront.fillStyle(0xb8b4ac);
+      gFront.fillRect(px, pY, pW, pH);
+      // fundo rebaixado
+      gFront.fillStyle(0xe8e4dc);
+      gFront.fillRect(px + 3, pY + 3, pW - 6, pH - 6);
+      // moldura externa
+      gFront.lineStyle(2, 0xc8c4bc);
+      gFront.strokeRect(px + 1, pY + 1, pW - 2, pH - 2);
+      // moldura interna
+      gFront.lineStyle(1, 0xd8d4cc);
+      gFront.strokeRect(px + 6, pY + 6, pW - 12, pH - 12);
     }
 
-    // Árvores e arbustos — Jeremiah pode sair de trás
-    const trees = [
-      { x: 100, h: 180, w: 60 },
-      { x: 400, h: 150, w: 50 },
-      { x: 700, h: 200, w: 70 },
-      { x: 1000, h: 160, w: 55 },
-    ];
+    // Trapézio
+    g.fillStyle(0xeae6de);
+    gFront.fillPoints([
+      { x: hoodX, y: hoodTopY + hoodBodyH },
+      { x: hoodX + hoodW, y: hoodTopY + hoodBodyH },
+      { x: hoodBotX + hoodBotW, y: hoodBotY },
+      { x: hoodBotX, y: hoodBotY }
+    ], true);
+    gFront.lineStyle(2, 0xc8c4b8);
+    gFront.strokePoints([
+      { x: hoodX, y: hoodTopY + hoodBodyH },
+      { x: hoodX + hoodW, y: hoodTopY + hoodBodyH },
+      { x: hoodBotX + hoodBotW, y: hoodBotY },
+      { x: hoodBotX, y: hoodBotY }
+    ], true);
 
-    trees.forEach(t => {
-      // Tronco
-      g.fillStyle(0x3a2a1a);
-      g.fillRect(startX + t.x + (t.w / 2) - 8, this.floorY - t.h, 16, t.h);
-      // Copa em camadas
-      g.fillStyle(0x0d2a0d);
-      g.fillTriangle(
-        startX + t.x, this.floorY - t.h * 0.5,
-        startX + t.x + t.w, this.floorY - t.h * 0.5,
-        startX + t.x + (t.w / 2), this.floorY - t.h
-      );
-      g.fillStyle(0x102e10);
-      g.fillTriangle(
-        startX + t.x + 5, this.floorY - t.h * 0.3,
-        startX + t.x + t.w - 5, this.floorY - t.h * 0.3,
-        startX + t.x + (t.w / 2), this.floorY - t.h * 0.8
-      );
-      g.fillStyle(0x143414);
-      g.fillTriangle(
-        startX + t.x + 10, this.floorY - t.h * 0.1,
-        startX + t.x + t.w - 10, this.floorY - t.h * 0.1,
-        startX + t.x + (t.w / 2), this.floorY - t.h * 0.6
-      );
+    // Barra de aço
+    gFront.fillStyle(0xa8b4bc);
+    gFront.fillRect(hoodBotX, hoodBotY, hoodBotW, 6);
+
+    // ══════════════════════════════════════════════════
+    // ALTURAS — bancada e fogão mais altos
+    // ══════════════════════════════════════════════════
+    const chNew = 95;
+    const counterTopNew = floorY - chNew;  // sobe a bancada
+
+    // ── Bancada dos lados do fogão ─────────────────────
+    const bancadaLX = sideAereoLX;
+    const bancadaLW = stoveX - bancadaLX;
+    const bancadaRX = stoveX + stoveW;
+    const bancadaRW = sideAereoRX + sideAereoW - bancadaRX;
+
+    [{ bx: bancadaLX, bw: bancadaLW }, { bx: bancadaRX, bw: bancadaRW }].forEach(({ bx, bw }) => {
+      if (bw <= 0) return;
+      // tampo branco
+      gFront.fillStyle(0xf0ede6);
+      gFront.fillRect(bx, counterTopNew - 6, bw, 6);
+      gFront.fillStyle(0xe8e4dc);
+      gFront.fillRect(bx, counterTopNew, bw, chNew);
+      gFront.fillStyle(0x060e18, 0.12);
+      gFront.fillRect(bx, counterTopNew + 4, bw, 4);
+
+      // 2 gavetas lado a lado (em cima)
+      const drawerH = chNew * 0.25;
+      const drawerW = (bw - 10) / 2;
+      [[bx + 3, bx + 3 + drawerW + 4]].flat().forEach((dx, idx) => {
+        const dxx = idx === 0 ? bx + 3 : bx + 3 + drawerW + 4;
+        const dyy = counterTopNew + 6;
+        const dhh = drawerH;
+        gFront.fillStyle(0xe8e4dc);
+        gFront.fillRect(dxx, dyy, drawerW, dhh);
+        gFront.lineStyle(1, 0xc8c4b8);
+        gFront.strokeRect(dxx + 3, dyy + 3, drawerW - 6, dhh - 6);
+        gFront.fillStyle(0xa8b0b8);
+        gFront.fillRect(dxx + drawerW / 2 - 14, dyy + dhh / 2 - 3, 28, 5);
+        gFront.fillStyle(0xb8c0c8);
+        gFront.fillRect(dxx + drawerW / 2 - 16, dyy + dhh / 2 - 6, 32, 3);
+      });
+      // corrigindo o loop acima de forma mais clara:
+      for (let idx = 0; idx < 2; idx++) {
+        const dxx = bx + 3 + idx * (drawerW + 4);
+        const dyy = counterTopNew + 6;
+        const dhh = drawerH;
+        gFront.fillStyle(0xe8e4dc);
+        gFront.fillRect(dxx, dyy, drawerW, dhh);
+        gFront.lineStyle(1, 0xc8c4b8);
+        gFront.strokeRect(dxx + 3, dyy + 3, drawerW - 6, dhh - 6);
+        gFront.fillStyle(0xa8b0b8);
+        gFront.fillRect(dxx + drawerW / 2 - 14, dyy + dhh / 2 - 3, 28, 5);
+        gFront.fillStyle(0xb8c0c8);
+        gFront.fillRect(dxx + drawerW / 2 - 16, dyy + dhh / 2 - 6, 32, 3);
+      }
+
+      // 2 portas grandes embaixo (alinhadas com as gavetas)
+      const doorTopY = counterTopNew + 6 + drawerH + 4;
+      const doorH = chNew - drawerH - 16;
+      for (let idx = 0; idx < 2; idx++) {
+        const dxx = bx + 3 + idx * (drawerW + 4);
+        gFront.fillStyle(0xe8e4dc);
+        gFront.fillRect(dxx, doorTopY, drawerW, doorH);
+        gFront.lineStyle(2, 0xc8c4b8);
+        gFront.strokeRect(dxx + 3, doorTopY + 3, drawerW - 6, doorH - 6);
+        gFront.lineStyle(1, 0xd8d4cc);
+        gFront.strokeRect(dxx + 7, doorTopY + 7, drawerW - 14, doorH - 14);
+        // puxador da porta
+        gFront.fillStyle(0xa8b0b8);
+        gFront.fillRect(dxx + drawerW / 2 - 14, doorTopY + 12, 28, 5);
+        gFront.fillStyle(0xb8c0c8);
+        gFront.fillRect(dxx + drawerW / 2 - 16, doorTopY + 10, 32, 3);
+      }
     });
 
-    // Arbustos interativos — esconderijo do player
-    const bushes = [
-      { x: 250, w: 80 },
-      { x: 600, w: 70 },
-      { x: 950, w: 90 },
-    ];
+    // ══════════════════════════════════════════════════
+    // FOGÃO TEAL — mais alto
+    // ══════════════════════════════════════════════════
+    const stoveTopY = counterTopNew;
+    const stoveH = floorY - stoveTopY - 12;
 
-    bushes.forEach(b => {
-      g.fillStyle(0x0d2a0d);
-      g.fillEllipse(startX + b.x + (b.w / 2), this.floorY - 25, b.w, 50);
-      g.fillStyle(0x102e10);
-      g.fillEllipse(startX + b.x + (b.w / 2) - 15, this.floorY - 30, b.w * 0.6, 40);
-      g.fillStyle(0x143414);
-      g.fillEllipse(startX + b.x + (b.w / 2) + 10, this.floorY - 28, b.w * 0.5, 35);
+    // Moldura inox externa
+    gFront.fillStyle(0xb0b8c0);
+    gFront.fillRect(stoveX - 4, stoveTopY, stoveW + 8, stoveH + 12);
 
-      const zone = this.add.zone(startX + b.x + (b.w / 2), this.floorY - 25, b.w, 50);
-      this.physics.add.existing(zone, true);
-      this.wardrobes.push(zone);
-    });
+    // Corpo teal
+    gFront.fillStyle(0x1a6268);
+    gFront.fillRect(stoveX, stoveTopY, stoveW, stoveH);
 
-    // Muro com plataforma para escapar
-    g.fillStyle(0xd4c8b0);
-    g.fillRect(startX + 500, this.floorY - 120, 200, 20);
-    g.fillRect(startX + 500, this.floorY - 120, 200, 4);
-    const muro = this.add.rectangle(startX + 600, this.floorY - 110, 200, 20).setVisible(false);
-    this.physics.add.existing(muro, true);
-    this.platforms.add(muro);
+    // Painel de controle inox
+    const panelH = 22;
+    const panelY = stoveTopY + 2;
+    gFront.fillStyle(0xb8c0c8);
+    gFront.fillRect(stoveX, panelY, stoveW, panelH);
+    gFront.fillStyle(0xd0d8e0);
+    gFront.fillRect(stoveX + 2, panelY + 2, stoveW - 4, 5);
+    gFront.fillStyle(0xa8b0b8);
+    gFront.fillRect(stoveX + 2, panelY + panelH - 4, stoveW - 4, 3);
 
-    g.fillStyle(0xd4c8b0);
-    g.fillRect(startX + 900, this.floorY - 150, 180, 20);
-    const muro2 = this.add.rectangle(startX + 990, this.floorY - 140, 180, 20).setVisible(false);
-    this.physics.add.existing(muro2, true);
-    this.platforms.add(muro2);
-
-    // Piscina
-    const poolX = startX + 800;
-    const poolW = 500;
-    const poolY = this.floorY - 60;
-    const poolH = 60;
-
-    g.fillStyle(0x1a5f8a);
-    g.fillRect(poolX, poolY, poolW, poolH);
-    // Brilho da piscina
-    g.fillStyle(0x2288cc, 0.3);
-    g.fillRect(poolX, poolY, poolW, 8);
-    g.fillStyle(0x44aaff, 0.15);
-    g.fillRect(poolX + 20, poolY + 15, poolW - 40, 4);
-    g.fillRect(poolX + 40, poolY + 30, poolW - 80, 3);
-    // Borda da piscina
-    g.fillStyle(0xe8e0d0);
-    g.fillRect(poolX - 10, poolY - 8, poolW + 20, 10);
-    g.fillRect(poolX - 10, poolY + poolH, poolW + 20, 10);
-
-    // Luz azul animada da piscina
-    const poolGlow = this.add.rectangle(poolX + poolW / 2, poolY + poolH / 2, poolW, poolH, 0x1188ee, 0.12).setDepth(2);
-    this.tweens.add({
-      targets: poolGlow,
-      alpha: { from: 0.08, to: 0.18 },
-      duration: 1800,
-      yoyo: true,
-      repeat: -1
-    });
-
-    // Zona da piscina — mergulhar para se esconder
-    this.poolZone = this.add.zone(poolX + poolW / 2, poolY + poolH / 2, poolW, poolH);
-    this.physics.add.existing(this.poolZone, true);
-
-    // Física da borda da piscina (player anda em cima)
-    const poolEdge = this.add.rectangle(poolX + poolW / 2, poolY - 4, poolW, 8).setVisible(false);
-    this.physics.add.existing(poolEdge, true);
-    this.platforms.add(poolEdge);
-
-    // zona de retorno jardim → cozinha
-    this.returnZone = this.add.zone(1420, this.floorY - 50, 40, 200);
-    this.physics.add.existing(this.returnZone, true);
-  }
-
-  // ─── JEREMIAH ─────────────────────────────────────
-  createJeremiah() {
-    // spawn no jardim sem escala
-    this.jeremiah = this.physics.add.sprite(1800, this.floorY - 60)
-      .setVisible(false)
-      .setCollideWorldBounds(true);
-
-    this.jeremiah.body.setSize(30 * this.s, 60 * this.s);
-    this.jeremiah.body.setGravityY(400);
-    this.jeremiahGfx = this.add.graphics().setDepth(6);
-
-    this.hibells = this.add.text(0, 0, '"Oi, Bells..."', {
-      fontSize: `${13 * this.s}px`,
-      fontFamily: 'Courier New',
-      color: '#aaffaa',
-      letterSpacing: 1 * this.s,
-      backgroundColor: '#0a1a0a',
-      padding: { x: 6 * this.s, y: 4 * this.s }
-    }).setOrigin(0.5).setAlpha(0).setDepth(10);
-  }
-
-  // ─── PIER ─────────────────────────────────────────
-  buildPier() {
-    const g = this.add.graphics().setDepth(1);
-    const s = this.s;
-    const startX = 2800 * s;
-
-    // Céu noturno continuando
-    g.fillStyle(0x080d18);
-    g.fillRect(startX, 0, 600 * s, GAME_H);
-
-    // Água
-    g.fillStyle(0x0a2a3a);
-    g.fillRect(startX, this.floorY - 20 * s, 600 * s, 100 * s);
-    g.fillStyle(0x0d3a4a, 0.5);
-    g.fillRect(startX, this.floorY - 20 * s, 600 * s, 6 * s);
-
-    // Reflexo da lua na água
-    g.fillStyle(0xfffde0, 0.06);
-    g.fillRect(startX + 200 * s, this.floorY - 15 * s, 80 * s, 80 * s);
-
-    // Estrutura do pier
-    g.fillStyle(0x5a3a1a);
-    g.fillRect(startX, this.floorY - 30 * s, 600 * s, 12 * s); // chão do pier
-    // Vigas do pier
-    [50, 150, 250, 350, 450, 550].forEach(x => {
-      g.fillStyle(0x4a2a10);
-      g.fillRect(startX + x * s, this.floorY - 20 * s, 10 * s, 80 * s);
-    });
-
-    // Cobertura do gazebo no final
-    g.fillStyle(0x4a3010);
-    g.fillTriangle(
-      startX + 350 * s, this.floorY - 180 * s,
-      startX + 600 * s, this.floorY - 180 * s,
-      startX + 480 * s, this.floorY - 280 * s
-    );
-    g.fillRect(startX + 350 * s, this.floorY - 180 * s, 250 * s, 15 * s);
-    // Colunas do gazebo
-    g.fillStyle(0x5a3a1a);
-    g.fillRect(startX + 360 * s, this.floorY - 165 * s, 12 * s, 135 * s);
-    g.fillRect(startX + 578 * s, this.floorY - 165 * s, 12 * s, 135 * s);
-
-    // Física do pier
-    const pierFloor = this.add.rectangle(startX + 300 * s, this.floorY - 24 * s, 600 * s, 12 * s).setVisible(false);
-    this.physics.add.existing(pierFloor, true);
-    this.platforms.add(pierFloor);
-
-    // Luzes de fada — string lights
-    const pierGfx = this.add.graphics().setDepth(3);
-    const lightPositions = [];
-    for (let i = 0; i <= 12; i++) {
-      lightPositions.push({
-        x: startX + i * 48 * s,
-        y: this.floorY - 120 * s + Math.sin(i * 0.5) * 15 * s
+    // 8 knobs
+    const knobY = panelY + panelH / 2;
+    const displayW = 40;
+    const knobAreaW = (stoveW - displayW - 20) / 2;
+    const kSpacing = knobAreaW / 4;
+    for (let i = 0; i < 4; i++) {
+      const kxL = stoveX + 10 + kSpacing * i + kSpacing / 2;
+      const kxR = centerX + displayW / 2 + 10 + kSpacing * i + kSpacing / 2;
+      [kxL, kxR].forEach(kx => {
+        gFront.fillStyle(0x888898); gFront.fillEllipse(kx, knobY, 14, 14);
+        gFront.fillStyle(0x606070); gFront.fillEllipse(kx, knobY, 9, 9);
+        gFront.fillStyle(0x303038); gFront.fillEllipse(kx, knobY, 4, 4);
+        gFront.fillStyle(0xd0d8e0); gFront.fillRect(kx - 1, knobY - 7, 2, 4);
       });
     }
-    // Fio
-    pierGfx.lineStyle(1 * s, 0x5a4a2a, 0.6);
-    pierGfx.beginPath();
-    lightPositions.forEach((p, i) => {
-      if (i === 0) pierGfx.moveTo(p.x, p.y);
-      else pierGfx.lineTo(p.x, p.y);
-    });
-    pierGfx.strokePath();
-    // Bolinhas de luz
-    lightPositions.forEach(p => {
-      pierGfx.fillStyle(0xffee88, 0.9);
-      pierGfx.fillCircle(p.x, p.y, 3 * s);
-      pierGfx.fillStyle(0xffee88, 0.15);
-      pierGfx.fillCircle(p.x, p.y, 8 * s);
+
+    // Display
+    gFront.fillStyle(0x101820);
+    gFront.fillRect(centerX - displayW / 2, panelY + 4, displayW, panelH - 8);
+    gFront.fillStyle(0x2a7888, 0.8);
+    gFront.fillRect(centerX - displayW / 2 + 3, panelY + 6, displayW - 6, panelH - 12);
+    gFront.fillStyle(0x4aaabb, 0.6);
+    gFront.fillRect(centerX - 10, panelY + 8, 8, 3);
+    gFront.fillRect(centerX + 2, panelY + 8, 8, 3);
+
+    // Divisória central
+    const divY2 = panelY + panelH + 2;
+    const divW = 10;
+    gFront.fillStyle(0xb8c0c8);
+    gFront.fillRect(centerX - divW / 2, divY2, divW, stoveH - (divY2 - stoveTopY));
+    gFront.fillStyle(0xd0d8e0);
+    gFront.fillRect(centerX - divW / 2 + 2, divY2, 3, stoveH - (divY2 - stoveTopY));
+
+    // 2 portas de forno
+    const ovenY = divY2 + 2;
+    const ovenH2 = stoveH - (ovenY - stoveTopY) - 2;
+    const ovenPad = 5;
+    [
+      [stoveX + ovenPad, centerX - divW / 2 - stoveX - ovenPad],
+      [centerX + divW / 2, stoveX + stoveW - centerX - divW / 2 - ovenPad]
+    ].forEach(([ox2, ow]) => {
+      gFront.fillStyle(0x142028);
+      gFront.fillRect(ox2, ovenY, ow, ovenH2);
+      gFront.fillStyle(0xb0b8c0);
+      gFront.fillRect(ox2, ovenY, ow, 4);
+      gFront.fillRect(ox2, ovenY, 4, ovenH2);
+      gFront.fillRect(ox2 + ow - 4, ovenY, 4, ovenH2);
+      gFront.fillRect(ox2, ovenY + ovenH2 - 4, ow, 4);
+      // puxador
+      const puxY = ovenY + 6;
+      gFront.fillStyle(0xd0d8e0);
+      gFront.fillRect(ox2 + 10, puxY, ow - 20, 6);
+      gFront.fillStyle(0xe0e8f0);
+      gFront.fillRect(ox2 + 10, puxY, ow - 20, 2);
+      gFront.fillStyle(0xa0a8b0);
+      gFront.fillRect(ox2 + 10, puxY - 2, 8, 10);
+      gFront.fillRect(ox2 + ow - 18, puxY - 2, 8, 10);
+      // janela
+      const winY = puxY + 10;
+      const winH = ovenH2 - (winY - ovenY) - 6;
+      gFront.fillStyle(0x1a3040, 0.9);
+      gFront.fillRect(ox2 + 6, winY, ow - 12, winH);
+      gFront.fillStyle(0x3a6878, 0.5);
+      gFront.fillRect(ox2 + 8, winY + 2, (ow - 12) * 0.45, winH - 4);
+      gFront.fillStyle(0xaaccdd, 0.07);
+      gFront.fillRect(ox2 + 9, winY + 3, (ow - 12) * 0.2, winH - 6);
+      gFront.lineStyle(2, 0x9aa8b0);
+      gFront.strokeRect(ox2 + 6, winY, ow - 12, winH);
     });
 
-    // Brilho animado das luzes de fada
-    const fairyGlow = this.add.rectangle(startX + 300 * s, this.floorY - 120 * s, 600 * s, 60 * s, 0xffee44, 0.04).setDepth(2);
+    // 4 pés
+    const footH = 12, footW = 10;
+    [stoveX + 8, stoveX + 28, stoveX + stoveW - 38, stoveX + stoveW - 18].forEach(fx => {
+      gFront.fillStyle(0xb8c0c8);
+      gFront.fillRect(fx, floorY - footH, footW, footH);
+      gFront.fillStyle(0xd0d8e0);
+      gFront.fillRect(fx + 2, floorY - footH + 1, footW - 4, 3);
+      gFront.fillStyle(0x909098);
+      gFront.fillRect(fx, floorY - 4, footW, 4);
+    });
+
+    // ══════════════════════════════════════════════════
+    // BACKSPLASH — cobre TODA a área central da parede até a bancada
+    // ══════════════════════════════════════════════════
+    const bsX = sideAereoLX;
+    const bsW = sideAereoW * 2 + hoodW;
+    const bsY = hoodBotY + 6;
+    const bsH = counterTop - bsY;
+    const tileW = 38, tileH = 18;
+
+    g.fillStyle(0xc8d4ce);
+    g.fillRect(bsX, hoodBotY + 6, bsW, counterTop - hoodBotY - 6);
+
+    for (let ty = bsY; ty < counterTop - 2; ty += tileH + 2) {
+      const rowN = Math.floor((ty - (bsY - 40)) / (tileH + 2));
+      const off = (rowN % 2 === 0) ? 0 : tileW / 2;
+      for (let tx = bsX - tileW / 2 + off; tx < bsX + bsW; tx += tileW + 2) {
+        const c = (Math.floor((tx - bsX) / (tileW + 2)) + rowN) % 2 === 0 ? 0xb8cac4 : 0xaabcb6;
+        const cx2 = Math.max(tx, bsX);
+        const cw = Math.min(tx + tileW, bsX + bsW) - cx2;
+        if (cw > 0) { g.fillStyle(c); g.fillRoundedRect(cx2, ty, cw, tileH, 2); }
+      }
+    }
+
+    // ══════════════════════════════════════════════════
+    // PRATOS DECORATIVOS (em cima do hood)
+    // ══════════════════════════════════════════════════
+    const plateY = topMargin - 8;
+    [centerX - 120, centerX - 60, centerX, centerX + 60, centerX + 120].forEach((px, i) => {
+      const pr = 20 + (i % 2) * 4;
+      g.fillStyle(0xeaf0f8); g.fillEllipse(px, plateY, pr * 2, pr * 2);
+      g.lineStyle(2, 0x3a68c8); g.strokeEllipse(px, plateY, pr * 1.6, pr * 1.6);
+      g.fillStyle(0x2a58b8, 0.5); g.fillEllipse(px, plateY, pr * 0.6, pr * 0.6);
+    });
+
+    // ══════════════════════════════════════════════════
+    // LUMINÁRIAS GLOBO (sobre os armários externos)
+    // ══════════════════════════════════════════════════
+    [ox + extLW / 2, extRX + extRW / 2].forEach(lx => {
+      g.fillStyle(0x888070);
+      g.fillRect(lx - 2, 22, 4, topMargin - 14);
+      g.fillStyle(0xf4f4f0);
+      g.fillEllipse(lx, topMargin + 20, 64, 56);
+      g.lineStyle(1, 0xd8d4cc);
+      g.strokeEllipse(lx, topMargin + 20, 64, 56);
+      g.fillStyle(0x888070);
+      g.fillRect(lx - 12, topMargin - 2, 24, 8);
+      g.fillRect(lx - 5, topMargin + 46, 10, 8);
+      g.fillStyle(0xfff8e0, 0.15);
+      g.fillEllipse(lx, topMargin + 14, 38, 28);
+    });
+  }
+  // ─── PAREDE 3: PANTRY + GELADEIRA  (X: 2800 → 4200) ──
+buildPantryWall() {
+    const g = this.add.graphics().setDepth(1);
+    const floorY = this.floorY;
+    const topMargin = 55;
+    const ch = 75;
+
+    const ox = 2800;
+    const wallW = 1400;
+    const centerX = ox + wallW / 2;
+
+    // PAREDE
+    g.fillStyle(0xaab8b8);
+    g.fillRect(ox, 0, wallW, floorY);
+    g.fillStyle(0x081828, 0.3);
+    g.fillRect(ox, 0, wallW, floorY);
+
+    // TETO
+    g.fillStyle(0xd8e0e4);
+    g.fillRect(ox, 0, wallW, 22);
+    g.fillStyle(0xc8d0d4);
+    [ox+100,ox+300,ox+500,ox+700,ox+900,ox+1100,ox+1300].forEach(x => {
+      g.fillRect(x, 0, 18, topMargin + 10);
+    });
+    g.fillStyle(0xc0c8cc);
+    g.fillRect(ox, topMargin - 12, wallW, 10);
+    g.fillRect(ox, topMargin / 2 - 6, wallW, 8);
+
+    // CHÃO
+    g.fillStyle(0x3a2a1a);
+    g.fillRect(ox, floorY, wallW, 8);
+    g.fillStyle(0x2a1a0e, 0.9);
+    g.fillRect(ox, floorY + 8, wallW, 72);
+    const floor3 = this.add.rectangle(ox + wallW / 2, floorY + 30, wallW, 60).setVisible(false);
+    this.physics.add.existing(floor3, true);
+    this.platforms.add(floor3);
+
+    // ── ARMÁRIO PANTRY ALTO ────────────────────────────
+    const pantryX = ox + 60, pantryW = 280;
+    const pantryH = floorY - topMargin;
+
+    g.fillStyle(0xeae6de);
+    g.fillRect(pantryX, topMargin, pantryW, pantryH);
+    g.lineStyle(3, 0xc8c4b8);
+    g.strokeRect(pantryX + 4, topMargin + 4, pantryW - 8, pantryH - 8);
+
+    g.fillStyle(0xe0dcd4);
+    g.fillRect(pantryX + 2, topMargin + 16, pantryW - 4, 5);
+
+    const pDoorW   = pantryW / 2 - 8;
+    const doorPad  = 6;
+    const innerPad = 12;
+
+    const totalDoorH = pantryH - 22;
+    const gap        = 8;
+    const door1H     = Math.floor(totalDoorH * 0.58);
+    const door2H     = totalDoorH - door1H - gap;
+    const door1Y     = topMargin + 22;
+    const door2Y     = door1Y + door1H + gap;
+
+    [[pantryX + doorPad], [pantryX + pantryW / 2 + 2]].forEach(([dx]) => {
+      const isRight = dx > pantryX + pantryW / 2;
+
+      // Porta superior
+      g.fillStyle(0xe8e4dc);
+      g.fillRect(dx, door1Y, pDoorW, door1H);
+      g.lineStyle(2, 0xc0bcb4);
+      g.strokeRect(dx + 3, door1Y + 3, pDoorW - 6, door1H - 6);
+      g.lineStyle(1, 0xd0ccC4);
+      g.strokeRoundedRect(dx + innerPad, door1Y + innerPad, pDoorW - innerPad * 2, door1H - innerPad * 2, 6);
+
+      // Porta inferior
+      g.fillStyle(0xe8e4dc);
+      g.fillRect(dx, door2Y, pDoorW, door2H);
+      g.lineStyle(2, 0xc0bcb4);
+      g.strokeRect(dx + 3, door2Y + 3, pDoorW - 6, door2H - 6);
+      g.lineStyle(1, 0xd0ccC4);
+      g.strokeRoundedRect(dx + innerPad, door2Y + innerPad, pDoorW - innerPad * 2, door2H - innerPad * 2, 6);
+
+      // Puxador vertical — borda interna
+      const ph2X = isRight ? dx + 4 : dx + pDoorW - 16;
+      const ph2Y = door2Y - 24;
+      const ph2H = door2H * 0.4;
+      g.fillStyle(0xb0b8c0); g.fillRect(ph2X, ph2Y, 8, ph2H);
+      g.fillStyle(0xd0d8e0);
+      g.fillRect(ph2X - 2, ph2Y - 4, 12, 7);
+      g.fillRect(ph2X - 2, ph2Y + ph2H - 3, 12, 7);
+      g.fillStyle(0xe0e8f0); g.fillRect(ph2X + 1, ph2Y + 4, 3, ph2H - 8);
+    });
+
+    g.fillStyle(0xd8d4cc);
+    g.fillRect(pantryX + pantryW / 2 - 2, topMargin + 22, 4, pantryH - 22);
+    g.fillStyle(0x081828, 0.18);
+    g.fillRect(pantryX + pantryW - 5, topMargin, 5, pantryH);
+
+    // ── NICHO CENTRAL ─────────────────────────────────
+    const nichoX = pantryX + pantryW + 6, nichoW = 200, nichoH = floorY - topMargin;
+    g.fillStyle(0x98a8a8);
+    g.fillRect(nichoX, topMargin, nichoW, nichoH);
+    g.fillStyle(0xeae6de);
+    g.fillRect(nichoX - 16, topMargin, 16, nichoH);
+    g.fillRect(nichoX + nichoW, topMargin, 16, nichoH);
+    g.fillRect(nichoX - 16, topMargin, nichoW + 32, 20);
+
+    // Prateleira 1 — livros
+    const shelf1Y = topMargin + 30, shelf1H = 70;
+    g.fillStyle(0xeae6de);
+    g.fillRect(nichoX, shelf1Y + shelf1H - 8, nichoW, 8);
+    const bookColors = [0xd44444,0xe8a030,0x4488cc,0xcc4444,0x44aa66,0xe05050,0x3366aa,0xaa4488,0xddbb44,0x558844];
+    const bookW = nichoW / bookColors.length;
+    bookColors.forEach((col, i) => {
+      const bx = nichoX + i * bookW + 2, bh = 36 + (i % 3) * 8;
+      g.fillStyle(col); g.fillRect(bx, shelf1Y + shelf1H - 8 - bh, bookW - 2, bh);
+      g.fillStyle(col, 0.6); g.fillRect(bx + 1, shelf1Y + shelf1H - 8 - bh, 3, bh);
+    });
+
+    // Prateleira 2 — abajures + quadro
+    const shelf2Y = shelf1Y + shelf1H + 4, shelf2H = 75;
+    g.fillStyle(0xeae6de);
+    g.fillRect(nichoX, shelf2Y + shelf2H - 8, nichoW, 8);
+    const lamp1X = nichoX + 30, lamp1Y = shelf2Y + shelf2H - 8;
+    g.fillStyle(0xd8c8a0);
+    g.fillPoints([{x:lamp1X-16,y:lamp1Y-44},{x:lamp1X+16,y:lamp1Y-44},{x:lamp1X+11,y:lamp1Y-8},{x:lamp1X-11,y:lamp1Y-8}], true);
+    g.fillStyle(0x9a8870); g.fillRect(lamp1X - 3, lamp1Y - 50, 6, 10);
+    g.fillStyle(0xfff8e0, 0.4); g.fillEllipse(lamp1X, lamp1Y - 26, 24, 16);
+    g.fillStyle(0xd8d0c8); g.fillRect(nichoX + 62, shelf2Y + 8, 70, 50);
+    g.lineStyle(2, 0xb8b0a8); g.strokeRect(nichoX + 64, shelf2Y + 10, 66, 46);
+    g.fillStyle(0x8898a8, 0.4); g.fillRect(nichoX + 68, shelf2Y + 14, 58, 38);
+    const lamp2X = nichoX + nichoW - 30;
+    g.fillStyle(0xd8c8a0);
+    g.fillPoints([{x:lamp2X-16,y:lamp1Y-44},{x:lamp2X+16,y:lamp1Y-44},{x:lamp2X+11,y:lamp1Y-8},{x:lamp2X-11,y:lamp1Y-8}], true);
+    g.fillStyle(0x9a8870); g.fillRect(lamp2X - 3, lamp1Y - 50, 6, 10);
+    g.fillStyle(0xfff8e0, 0.4); g.fillEllipse(lamp2X, lamp1Y - 26, 24, 16);
+
+    // Micro-ondas
+    const mwY = shelf2Y + shelf2H + 4, mwH = 90;
+    g.fillStyle(0x282828); g.fillRect(nichoX + 4, mwY, nichoW - 8, mwH);
+    g.lineStyle(2, 0x484848); g.strokeRect(nichoX + 4, mwY, nichoW - 8, mwH);
+    g.fillStyle(0x1a1a1a); g.fillRect(nichoX + nichoW - 44, mwY + 4, 36, mwH - 8);
+    g.fillStyle(0x0a1818, 0.9); g.fillRect(nichoX + 8, mwY + 8, nichoW - 60, mwH - 16);
+    g.lineStyle(1, 0x3a4848); g.strokeRect(nichoX + 8, mwY + 8, nichoW - 60, mwH - 16);
+    [mwY+20,mwY+36,mwY+52,mwY+68].forEach(by => {
+      g.fillStyle(0x505050); g.fillCircle(nichoX + nichoW - 24, by, 4);
+    });
+    g.fillStyle(0x585858); g.fillRect(nichoX + nichoW - 52, mwY + mwH / 2 - 20, 4, 40);
+
+    // Gaveta abaixo do micro
+    const drawerY = mwY + mwH + 4, drawerH = 30;
+    g.fillStyle(0xe8e4dc); g.fillRect(nichoX + 4, drawerY, nichoW - 8, drawerH);
+    g.lineStyle(1, 0xc8c4b8); g.strokeRect(nichoX + 8, drawerY + 4, nichoW - 16, drawerH - 8);
+    g.fillStyle(0xa0a8b0); g.fillRect(nichoX + nichoW / 2 - 18, drawerY + drawerH / 2 - 3, 36, 6);
+
+    // Armário baixo
+    const botNichoY  = drawerY + drawerH + 4;
+    const botNichoH  = floorY - botNichoY;
+    const pDoorW2    = (nichoW - 12) / 2;
+    const innerPad2  = 10;
+
+    [[nichoX + 4, 'left'], [nichoX + nichoW / 2 + 2, 'right']].forEach(([dx, side]) => {
+      const isRight = side === 'right';
+      const dw = pDoorW2;
+      g.fillStyle(0xe8e4dc);
+      g.fillRect(dx, botNichoY, dw, botNichoH - 4);
+      g.lineStyle(2, 0xc0bcb4);
+      g.strokeRect(dx + 3, botNichoY + 3, dw - 6, botNichoH - 10);
+      g.lineStyle(1, 0xd0ccC4);
+      g.strokeRoundedRect(dx + innerPad2, botNichoY + innerPad2, dw - innerPad2 * 2, botNichoH - innerPad2 * 2 - 4, 5);
+      const phX = isRight ? dx + 4 : dx + dw - 16;
+      const phY = botNichoY + 5;
+      const phH = botNichoH * 0.35;
+      g.fillStyle(0xb0b8c0); g.fillRect(phX, phY, 8, phH);
+      g.fillStyle(0xd0d8e0);
+      g.fillRect(phX - 2, phY - 4, 12, 7);
+      g.fillRect(phX - 2, phY + phH - 3, 12, 7);
+      g.fillStyle(0xe0e8f0); g.fillRect(phX + 1, phY + 4, 3, phH - 8);
+    });
+
+    // ── GELADEIRA EMBUTIDA ────────────────────────────
+    const fridgeX = nichoX + nichoW + 32, fridgeW = 300;
+    const fridgeH = floorY - topMargin - 10, fridgeY = topMargin;
+    const fridgeMidX = fridgeX + fridgeW / 2;
+
+    const fridgeCaixilhoH = shelf1Y + shelf1H - fridgeY;
+    g.fillStyle(0xeae6de);
+    g.fillRect(fridgeX - 16, fridgeY, fridgeW + 32, fridgeCaixilhoH);
+    g.lineStyle(2, 0xc8c4b8); g.strokeRect(fridgeX - 12, fridgeY + 4, fridgeW + 24, fridgeCaixilhoH - 8);
+    g.lineStyle(1, 0xd8d4cc); g.strokeRect(fridgeX - 6, fridgeY + 8, fridgeW + 12, fridgeCaixilhoH - 16);
+
+    // Corpo
+    g.fillStyle(0xe8e4dc);
+    g.fillRect(fridgeX, fridgeY + fridgeCaixilhoH, fridgeW, fridgeH - fridgeCaixilhoH);
+    g.fillStyle(0xb8bcc4);
+    g.fillRect(fridgeMidX - 3, fridgeY + fridgeCaixilhoH, 6, fridgeH - fridgeCaixilhoH);
+
+    // Painéis porta esq
+    g.lineStyle(2, 0xc8c4b8);
+    g.strokeRect(fridgeX + 6, fridgeY + fridgeCaixilhoH + 6, fridgeW / 2 - 12, (fridgeH - 50) / 2);
+    g.strokeRect(fridgeX + 6, fridgeY + fridgeCaixilhoH + 10 + (fridgeH - 50) / 2, fridgeW / 2 - 12, (fridgeH - 60) / 2);
+    g.lineStyle(1, 0xd8d4cc);
+    g.strokeRect(fridgeX + 12, fridgeY + fridgeCaixilhoH + 12, fridgeW / 2 - 24, (fridgeH - 50) / 2 - 10);
+    g.strokeRect(fridgeX + 12, fridgeY + fridgeCaixilhoH + 18 + (fridgeH - 50) / 2, fridgeW / 2 - 24, (fridgeH - 60) / 2 - 12);
+
+    // Painéis porta dir
+    g.lineStyle(2, 0xc8c4b8);
+    g.strokeRect(fridgeMidX + 6, fridgeY + fridgeCaixilhoH + 6, fridgeW / 2 - 12, (fridgeH - 50) / 2);
+    g.strokeRect(fridgeMidX + 6, fridgeY + fridgeCaixilhoH + 10 + (fridgeH - 50) / 2, fridgeW / 2 - 12, (fridgeH - 60) / 2);
+    g.lineStyle(1, 0xd8d4cc);
+    g.strokeRect(fridgeMidX + 12, fridgeY + fridgeCaixilhoH + 12, fridgeW / 2 - 24, (fridgeH - 50) / 2 - 10);
+    g.strokeRect(fridgeMidX + 12, fridgeY + fridgeCaixilhoH + 18 + (fridgeH - 50) / 2, fridgeW / 2 - 24, (fridgeH - 60) / 2 - 12);
+
+    // Puxadores
+    const phY = fridgeY + fridgeH * 0.60;
+    const phH = 80;
+    const ph1X = fridgeMidX - 16;
+    g.fillStyle(0xb0b8c0); g.fillRect(ph1X, phY, 8, phH);
+    g.fillStyle(0xd0d8e0);
+    g.fillRect(ph1X - 2, phY - 4, 12, 7);
+    g.fillRect(ph1X - 2, phY + phH - 3, 12, 7);
+    g.fillStyle(0xe0e8f0); g.fillRect(ph1X + 1, phY + 4, 3, phH - 8);
+    const ph2X = fridgeMidX + 8;
+    g.fillStyle(0xb0b8c0); g.fillRect(ph2X, phY, 8, phH);
+    g.fillStyle(0xd0d8e0);
+    g.fillRect(ph2X - 2, phY - 4, 12, 7);
+    g.fillRect(ph2X - 2, phY + phH - 3, 12, 7);
+    g.fillStyle(0xe0e8f0); g.fillRect(ph2X + 1, phY + 4, 3, phH - 8);
+
+    // ── PAREDE DIREITA ────────────────────────────────
+    const rightWallX = fridgeX + fridgeW + 16;
+    const chR = 100; 
+    const counterTopR = floorY - chR;
+    const rightW = 210;
+
+    // Tampo
+    g.fillStyle(0xf0ede6);
+    g.fillRect(rightWallX, counterTopR - 6, rightW, 6);
+    g.fillStyle(0xe8e4dc);
+    g.fillRect(rightWallX, counterTopR, rightW, chR);
+    g.fillStyle(0x060e18, 0.12);
+    g.fillRect(rightWallX, counterTopR + 4, rightW, 4);
+
+    // 2 gavetas finas no topo
+    const drawerHR = chR * 0.25;
+    const drawerWR = (rightW - 10) / 2;
+    for (let i = 0; i < 2; i++) {
+      const dx = rightWallX + 3 + i * (drawerWR + 4);
+      const dy = counterTopR + 5;
+      g.fillStyle(0xe8e4dc);
+      g.fillRect(dx, dy, drawerWR, drawerHR);
+      g.lineStyle(2, 0xc0bcb4);
+      g.strokeRect(dx + 3, dy + 3, drawerWR - 6, drawerHR - 6);
+      g.lineStyle(1, 0xd0ccC4);
+      g.strokeRect(dx + 7, dy + 7, drawerWR - 14, drawerHR - 14);
+      g.fillStyle(0xb0b8c0);
+      g.fillRect(dx + drawerWR/2 - 16, dy + drawerHR/2 - 3, 32, 6);
+      g.fillStyle(0xd0d8e0);
+      g.fillRect(dx + drawerWR/2 - 18, dy + drawerHR/2 - 5, 36, 3);
+      g.fillStyle(0xa0a8b0);
+      g.fillRect(dx + drawerWR/2 - 18, dy + drawerHR/2 - 5, 5, 8);
+      g.fillRect(dx + drawerWR/2 + 13, dy + drawerHR/2 - 5, 5, 8);
+    }
+
+    // 2 portas grandes embaixo
+    const doorTopYR = counterTopR + drawerHR + 9;
+    const doorHR    = chR - drawerHR - 14;
+    const innerPadR = 10;
+    for (let i = 0; i < 2; i++) {
+      const dx = rightWallX + 3 + i * (drawerWR + 4);
+      g.fillStyle(0xe8e4dc);
+      g.fillRect(dx, doorTopYR, drawerWR, doorHR);
+      g.lineStyle(2, 0xc0bcb4);
+      g.strokeRect(dx + 3, doorTopYR + 3, drawerWR - 6, doorHR - 6);
+      g.fillStyle(0xd8d4cc);
+      g.fillRect(dx + innerPadR, doorTopYR + innerPadR, drawerWR - innerPadR*2, doorHR - innerPadR*2);
+      g.fillStyle(0xe8e4dc);
+      g.fillRect(dx + innerPadR + 3, doorTopYR + innerPadR + 3, drawerWR - innerPadR*2 - 6, doorHR - innerPadR*2 - 6);
+      g.lineStyle(1, 0xd0ccC4);
+      g.strokeRect(dx + innerPadR, doorTopYR + innerPadR, drawerWR - innerPadR*2, doorHR - innerPadR*2);
+      const phDy = doorTopYR + 14;
+      g.fillStyle(0xb0b8c0);
+      g.fillRect(dx + drawerWR/2 - 16, phDy, 32, 6);
+      g.fillStyle(0xd0d8e0);
+      g.fillRect(dx + drawerWR/2 - 18, phDy - 2, 36, 3);
+      g.fillStyle(0xa0a8b0);
+      g.fillRect(dx + drawerWR/2 - 18, phDy - 2, 5, 10);
+      g.fillRect(dx + drawerWR/2 + 13, phDy - 2, 5, 10);
+    }
+
+    // Prateleiras flutuantes com livros
+    [topMargin + 150].forEach((sy, si) => {
+      g.fillStyle(0xeae6de);
+      g.fillRect(rightWallX, sy + 60, 210, 8);
+      g.fillRect(rightWallX, sy - 8, 8, 76);
+      g.fillRect(rightWallX + 202, sy - 8, 8, 76);
+      g.fillPoints([{x:rightWallX,y:sy+60},{x:rightWallX+28,y:sy+60},{x:rightWallX+8,y:sy+20}], true);
+      const bColors = si === 0
+        ? [0xcc4444,0x4488cc,0xe8a030,0xaa4488,0x44aa66,0xddbb44,0xd44444]
+        : [0x558844,0x3366aa,0xcc6644,0x8844aa,0xdd9944];
+      const bw = (210 - 16) / (bColors.length + 1);
+      bColors.forEach((col, i) => {
+        const bx = rightWallX + 10 + i * (bw + 1), bh = 36 + (i % 3) * 8;
+        g.fillStyle(col); g.fillRect(bx, sy + 60 - bh, bw, bh);
+      });
+      if (si === 0) {
+        g.fillStyle(0x4a7888);
+        g.fillRect(rightWallX + 172, sy + 60 - 50, 22, 50);
+        g.fillRect(rightWallX + 168, sy + 60 - 55, 30, 8);
+      }
+    });
+
+    // Objeto decorativo
+    g.fillStyle(0x4488cc, 0.8); g.fillCircle(rightWallX + 106, topMargin + 230, 8);
+    g.fillStyle(0x88aacc, 0.8); g.fillCircle(rightWallX + 124, topMargin + 238, 6);
+    g.fillStyle(0x446688);
+    g.fillRect(rightWallX + 104, topMargin + 240, 4, 24);
+    g.fillRect(rightWallX + 122, topMargin + 246, 3, 18);
+
+    // Abertura para a sala
+    const openX = ox + wallW - 260, openW = 260;
+    g.fillStyle(0xc8b898);
+    g.fillRect(openX, topMargin, openW, floorY - topMargin);
+    g.fillStyle(0x181008, 0.18);
+    g.fillRect(openX, topMargin, openW, floorY - topMargin);
+    g.fillStyle(0xeae6de);
+    g.fillRect(openX - 20, topMargin, 20, floorY - topMargin);
+    g.fillRect(openX - 20, topMargin, openW + 20, 22);
+    g.fillStyle(0xd8e8f0, 0.5);
+    g.fillRect(openX + 70, topMargin + 40, 130, 200);
+    g.fillStyle(0xfff8f0, 0.25);
+    g.fillRect(openX + 74, topMargin + 44, 122, 192);
+    g.fillStyle(0xd8c8b0, 0.7);
+    g.fillRect(openX + 50, topMargin + 36, 28, 210);
+    g.fillRect(openX + 182, topMargin + 36, 28, 210);
+    g.fillStyle(0xb8a898);
+    g.fillRect(openX + 18, floorY - 90, 96, 60);
+    g.fillRect(openX + 12, floorY - 120, 108, 34);
+    g.fillRect(openX + 12, floorY - 90, 14, 60);
+    g.fillRect(openX + 106, floorY - 90, 14, 60);
+    g.fillStyle(0xa09880, 0.4);
+    g.fillEllipse(openX + 110, floorY - 20, 150, 28);
+
+    // ── LUMINÁRIAS PENDENTES ──────────────────────────
+    [pantryX + pantryW / 2, fridgeX + fridgeW / 2 + 50].forEach(lx => {
+      g.fillStyle(0x888070);
+      g.fillRect(lx - 2, 22, 4, topMargin - 22);
+      g.fillStyle(0xf0f0ec);
+      g.fillEllipse(lx, topMargin + 20, 52, 44);
+      g.lineStyle(1, 0xd8d4cc);
+      [0.3,0.55,0.75,0.9].forEach(r => g.strokeEllipse(lx, topMargin + 20, 52 * r, 44 * r));
+      g.fillStyle(0x888070);
+      g.fillRect(lx - 8, topMargin - 6, 16, 8);
+      g.fillRect(lx - 4, topMargin + 40, 8, 8);
+      g.fillStyle(0xfff8e0, 0.2);
+      g.fillEllipse(lx, topMargin + 14, 32, 22);
+      g.fillStyle(0x8ab0cc, 0.04);
+      g.fillTriangle(lx - 80, topMargin + 44, lx + 80, topMargin + 44, lx, floorY);
+    });
+  }
+
+  // ── Transição Fake 3D ─────────────────────────────
+  transitionWall(direction) {
+
+    console.log('transitionWall chamada:', direction); // ADD
+
+    if (this.passingThrough) return;
+    this.passingThrough = true;
+
+    const goingRight = direction === 'right';
+    const nextWall = goingRight ? this.currentWall + 1 : this.currentWall - 1;
+    const wallStartX = (nextWall - 1) * 1400;
+    const spawnX = goingRight ? wallStartX + 120 : wallStartX + 1280;
+
+    this.player.body.setVelocity(0, 0);
+    this.player.body.setAllowGravity(false);
+    this.cameras.main.stopFollow();
+
+    this.cameras.main.fade(350, 0, 0, 0);
     this.tweens.add({
-      targets: fairyGlow,
-      alpha: { from: 0.02, to: 0.07 },
-      duration: 2000,
-      yoyo: true,
-      repeat: -1
+      targets: this.cameras.main,
+      zoom: { from: 1.0, to: 1.06 },
+      duration: 350,
+      ease: 'Sine.easeIn'
+    });
+
+    this.time.delayedCall(400, () => {
+      // PASSO 1: atualiza a parede atual primeiro
+      this.currentWall = nextWall;
+
+      // PASSO 2: recalcula as posições com base na parede correta
+      const wallStartX = (this.currentWall - 1) * 1400;
+      const spawnX = goingRight ? wallStartX + 120 : wallStartX + 1280;
+
+      // PASSO 3: move o player para a nova posição
+      this.player.setPosition(spawnX, this.floorY - 80);
+
+      // PASSO 4: atualiza os bounds da câmera para a nova parede
+      this.cameras.main.setBounds(wallStartX, 0, 1400, GAME_H);
+
+      // PASSO 5: centraliza a câmera no player
+      this.cameras.main.centerOn(spawnX, GAME_H / 2);
+
+      // PASSO 6: zoom de saída (já existia)
+      this.tweens.add({
+        targets: this.cameras.main,
+        zoom: { from: 1.06, to: 1.0 },
+        duration: 400,
+        ease: 'Sine.easeOut'
+      });
+
+      // PASSO 7: reativa física e câmera (já existia)
+      this.player.body.setAllowGravity(true);
+      this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+      this.cameras.main.fadeIn(400, 0, 0, 0);
+
+      this.time.delayedCall(500, () => { this.passingThrough = false; });
     });
   }
 
   setupWorld() {
     this.physics.world.setBounds(0, 0, this.worldWidth, GAME_H);
-    // câmera começa restrita à cozinha — impede de ver o jardim antes da transição
     this.cameras.main.setBounds(0, 0, 1400, GAME_H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
   }
 
-  // ─── JEREMIAH ─────────────────────────────────────
   createJeremiah() {
-    this.jeremiah = this.physics.add.sprite(1600 * this.s, this.floorY - 60 * this.s)
+    this.jeremiah = this.physics.add.sprite(1800, this.floorY - 60)
       .setVisible(false)
       .setCollideWorldBounds(true);
-
     this.jeremiah.body.setSize(30 * this.s, 60 * this.s);
     this.jeremiah.body.setGravityY(400 * this.s);
     this.jeremiahGfx = this.add.graphics().setDepth(6);
-
     this.hibells = this.add.text(0, 0, '"Oi, Bells..."', {
       fontSize: `${13 * this.s}px`,
       fontFamily: 'Courier New',
@@ -1421,14 +1980,13 @@ class Phase2Scene extends BaseScene {
   }
 
   drawJeremiah() {
-    const x = this.jeremiah.x;
-    const y = this.jeremiah.y;
-    const g = this.jeremiahGfx;
-    const s = this.s;
+    const x = this.jeremiah.x, y = this.jeremiah.y;
+    const g = this.jeremiahGfx, s = this.s;
     g.clear();
-
+    const wallStartX = (this.currentWall - 1) * 1400;
+    const wallEndX = wallStartX + 1400;
+    if (x < wallStartX || x > wallEndX) return;
     const color = this.jeremiahLooking ? 0x88ff88 : 0x447744;
-
     g.fillStyle(color, this.jeremiahLooking ? 0.9 : 0.7);
     g.fillRect(x - 12 * s, y - 58 * s, 24 * s, 35 * s);
     g.fillStyle(color, this.jeremiahLooking ? 1 : 0.8);
@@ -1444,7 +2002,6 @@ class Phase2Scene extends BaseScene {
     g.fillRect(x + 1 * s, y - 22 * s, 9 * s, 22 * s);
     g.fillRect(x - 18 * s, y - 56 * s, 6 * s, 28 * s);
     g.fillRect(x + 12 * s, y - 56 * s, 6 * s, 28 * s);
-
     if (this.jeremiahLooking) {
       g.fillStyle(0x00ff00, 0.08);
       g.fillCircle(x, y - 50 * s, 50 * s);
@@ -1452,32 +2009,23 @@ class Phase2Scene extends BaseScene {
   }
 
   checkJeremiah() {
-    // Escondido em qualquer lugar — Jeremiah não vê
-    if (this.inWardrobe || this.inBush || this.inPool) {
-      this.jeremiahLooking = false;
-      return;
-    }
-
+    if (this.inWardrobe) { this.jeremiahLooking = false; return; }
+    const wallStartX = (this.currentWall - 1) * 1400;
+    const wallEndX = wallStartX + 1400;
+    if (this.jeremiah.x < wallStartX || this.jeremiah.x > wallEndX) return;
     const dx = Math.abs(this.player.x - this.jeremiah.x);
     const dy = Math.abs(this.player.y - this.jeremiah.y);
     const facingRight = this.jeremiahDir > 0;
-    const playerInFront = facingRight ?
-      (this.player.x > this.jeremiah.x) :
-      (this.player.x < this.jeremiah.x);
-
+    const playerInFront = facingRight
+      ? this.player.x > this.jeremiah.x
+      : this.player.x < this.jeremiah.x;
     if (dx < 220 * this.s && dy < 90 * this.s && playerInFront && !this.hitCooldown) {
       this.jeremiahLooking = true;
       this.hitCooldown = true;
-
       this.hibells.setPosition(this.jeremiah.x, this.jeremiah.y - 110 * this.s).setAlpha(1);
       this.tweens.killTweensOf(this.hibells);
       this.tweens.add({ targets: this.hibells, alpha: 0, duration: 1000, delay: 1000 });
-
-      if (GameState.damage(2)) {
-        this.transitionTo('GameOverScene');
-        return;
-      }
-
+      if (GameState.damage(2)) { this.transitionTo('GameOverScene'); return; }
       const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x00ff00, 0.25)
         .setScrollFactor(0).setDepth(25);
       this.tweens.add({ targets: flash, alpha: 0, duration: 700, onComplete: () => flash.destroy() });
@@ -1493,79 +2041,38 @@ class Phase2Scene extends BaseScene {
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, d.zone.x, d.zone.y);
       if (dist < 70 * this.s) {
         d.searched = true;
-
         this.sound.play('som_gaveta', { volume: 1.2 });
-        const x = d.zone.x - 42; // x base da gaveta
-        const ch = 75;
-
-        // redesenha a gaveta aberta — empurra o painel para baixo
+        const x = d.zone.x - 42, ch = 75;
         const dg = this.add.graphics().setDepth(3);
-
-        // fundo da gaveta aberta (interior escuro)
         dg.fillStyle(0x888898);
         dg.fillRect(x + 2, this.floorY - ch + 5, 81, (ch - 10) / 2);
-
-        // painel superior puxado para baixo (sobrepõe o interior)
         dg.fillStyle(0xd8e0e8);
         dg.fillRect(x + 2, this.floorY - ch + 22, 81, (ch - 10) / 2);
-
-        // painel inferior igual — não mexe
         dg.fillStyle(0xb8c4cc);
         dg.fillRect(x + 2, this.floorY - ch + 7 + (ch - 10) / 2, 81, (ch - 12) / 2);
-
-        // bordas
         dg.lineStyle(1, 0xa8b4c0);
         dg.strokeRect(x + 2, this.floorY - ch + 22, 81, (ch - 10) / 2);
         dg.strokeRect(x + 2, this.floorY - ch + 7 + (ch - 10) / 2, 81, (ch - 12) / 2);
-
-        // puxador deslocado junto com o painel
         dg.fillStyle(0x9898a8);
         dg.fillRect(x + 26, this.floorY - ch + 35, 34, 4);
-        dg.fillRect(x + 26, this.floorY - ch + 38, 34, 4);
-
         if (d.hasKey) {
           this.keyFound = false;
-
-          // desenha a chave dentro da gaveta aberta
-          const keyX = d.zone.x;
-          const keyY = this.floorY - ch + 16; // dentro do interior visível
-
+          const keyX = d.zone.x, keyY = this.floorY - ch + 16;
           const kg = this.add.graphics().setDepth(4);
-
-          // cabeça da chave
-          kg.fillStyle(0xffdd44, 0.9);
-          kg.fillCircle(keyX, keyY, 8);
-          kg.fillStyle(0xffaa00);
-          kg.fillCircle(keyX, keyY, 5);
-
-          // cabo e dentes
+          kg.fillStyle(0xffdd44, 0.9); kg.fillCircle(keyX, keyY, 8);
+          kg.fillStyle(0xffaa00); kg.fillCircle(keyX, keyY, 5);
           kg.fillRect(keyX + 2, keyY, 18, 4);
           kg.fillRect(keyX + 14, keyY + 4, 4, 4);
           kg.fillRect(keyX + 18, keyY + 4, 4, 4);
-
-          // brilho pulsante
           const glow = this.add.rectangle(keyX, keyY, 24, 24, 0xffdd44, 0.06).setDepth(3);
-          this.tweens.add({
-            targets: glow,
-            alpha: { from: 0.02, to: 0.1 },
-            duration: 800,
-            yoyo: true,
-            repeat: -1
-          });
-
-          // zona de coleta
+          this.tweens.add({ targets: glow, alpha: { from: 0.02, to: 0.1 }, duration: 800, yoyo: true, repeat: -1 });
           this.keyZone = this.add.zone(keyX, keyY, 24, 24).setDepth(4);
           this.physics.add.existing(this.keyZone, true);
           this.keyZone.body.setSize(24, 24);
-
-          // guarda referências para o collectKey() do BaseScene
           this.keyGfx = kg;
           this.keyGlow = glow;
-
-          // coleta ao tocar
           this.physics.add.overlap(this.player, this.keyZone, () => this.collectKey());
         }
-
         return;
       }
     }
@@ -1573,52 +2080,36 @@ class Phase2Scene extends BaseScene {
 
   handleInteract() {
     if (this.transitioning) return;
-
-    // Porta
     if (this.isNear(this.doorZone)) {
-      if (!this.keyFound) {
-        this.showLockedMessage();
-        return;
-      }
+      if (!this.keyFound) { this.showLockedMessage(); return; }
       this.sound.play('som_porta', { volume: 1.2, seek: 0.5 });
       this.transitionTo(this.doorDestination);
       return;
     }
-
-    // Armários de cozinha e arbustos
     for (let w of this.wardrobes) {
       if (this.isNear(w)) {
         this.inWardrobe = !this.inWardrobe;
-        this.inBush = false;
         this.player.body.setAllowGravity(!this.inWardrobe);
         if (this.inWardrobe) this.player.body.setVelocity(0, 0);
         return;
       }
     }
-
-    // Piscina
-    if (this.isNear(this.poolZone)) {
-      this.inPool = !this.inPool;
-      this.player.body.setAllowGravity(!this.inPool);
-      if (this.inPool) this.player.body.setVelocity(0, 0);
-      return;
-    }
-
-    // Gavetas
     this.checkDrawers();
-
   }
 
   update() {
     super.update();
     if (this.transitioning) return;
 
-    // Jeremiah patrulha só no jardim/piscina
-    if (!this.inWardrobe && !this.inBush && !this.inPool) {
+    // ADD — remove depois
+    console.log('player.x:', Math.floor(this.player.x), '| wall:', this.currentWall, '| zone1to2.x:', this.zoneW1toW2.x);
+
+    // Jeremiah patrulha por todo o mundo (0 → 4200)
+    if (!this.inWardrobe) {
       this.jeremiah.body.setVelocityX(this.jeremiahSpeed * this.jeremiahDir);
-      if (this.jeremiah.x > 2700 * this.s || this.jeremiah.x < 1450 * this.s) {
+      if (this.jeremiah.x > 4150 || this.jeremiah.x < 50) {
         this.jeremiahDir *= -1;
-        this.jeremiah.x = Phaser.Math.Clamp(this.jeremiah.x, 1451 * this.s, 2699 * this.s);
+        this.jeremiah.x = Phaser.Math.Clamp(this.jeremiah.x, 51, 4149);
       }
     } else {
       this.jeremiah.body.setVelocityX(0);
@@ -1627,64 +2118,31 @@ class Phase2Scene extends BaseScene {
     this.drawJeremiah();
     this.checkJeremiah();
 
-    // passagem cozinha → jardim
-    if (!this.passingThrough && this.passageZone && this.isNear(this.passageZone)) {
-      this.passingThrough = true;
-      this.player.body.setVelocity(0, 0);
-      this.player.body.setAllowGravity(false);
-      this.cameras.main.stopFollow(); // para a câmera antes do fade — impede de ver o jardim
-      this.cameras.main.fade(500, 0, 0, 0);
-
-      this.time.delayedCall(1500, () => {
-        this.player.setPosition(1400 + 200, this.floorY - 50 * this.s);
-        this.player.body.setAllowGravity(true);
-        // câmera agora cobre só o jardim e pier
-        this.cameras.main.setBounds(1400, 0, this.worldWidth - 1400, GAME_H);
-        this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-        this.cameras.main.fadeIn(500, 0, 0, 0);
-        this.time.delayedCall(600, () => { this.passingThrough = false; });
-      });
-    }
-
-    // retorno jardim → cozinha
-    this.passageZone.active = false;
-    if (!this.passingThrough && this.returnZone && this.isNear(this.returnZone)) {
-      this.passingThrough = true;
-      this.player.body.setVelocity(0, 0);
-      this.player.body.setAllowGravity(false);
-      this.cameras.main.stopFollow(); // para a câmera antes do fade — impede de ver a cozinha
-      this.cameras.main.fade(500, 0, 0, 0);
-
-      this.time.delayedCall(1500, () => {
-        this.player.setPosition(800, this.floorY - 50 * this.s);
-        this.player.body.setAllowGravity(true);
-        // câmera volta para a cozinha
-        this.cameras.main.setBounds(0, 0, 1400, GAME_H);
-        this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-        this.cameras.main.fadeIn(500, 0, 0, 0);
-        this.time.delayedCall(600, () => {
-          this.passingThrough = false;
-          this.passageZone.active = true; // reativa só depois
-        });
-        this.time.delayedCall(600, () => { this.passingThrough = false; });
-      });
+    // Detecção de transição entre paredes
+    if (!this.passingThrough) {
+      if (this.currentWall === 1 && this.player.x >= 1350) {
+        this.transitionWall('right');
+      } else if (this.currentWall === 2 && this.player.x <= 1450) {
+        this.transitionWall('left');
+      } else if (this.currentWall === 2 && this.player.x >= 2750) {
+        this.transitionWall('right');
+      } else if (this.currentWall === 3 && this.player.x <= 2850) {
+        this.transitionWall('left');
+      }
     }
 
     // Prompts
-    let nearWardrobe = this.wardrobes.some(w => this.isNear(w));
-    let nearPool = this.isNear(this.poolZone);
-    let nearDrawer = this.drawers.some(d => !d.searched && this.isNear(d.zone));
-    let nearDoor = this.isNear(this.doorZone);
+    const nearWardrobe = this.wardrobes.some(w => this.isNear(w));
+    const nearDrawer = this.drawers.some(d => !d.searched && this.isNear(d.zone));
+    const nearDoor = this.isNear(this.doorZone);
 
     if (nearWardrobe && !this.activePrompt) {
       this.createPrompt(this.inWardrobe ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70 * this.s, '#44bbff');
-    } else if (nearPool && !this.activePrompt) {
-      this.createPrompt(this.inPool ? '[E] Sair da piscina' : '[E] Mergulhar', -70 * this.s, '#44aaff');
     } else if (nearDrawer && !this.activePrompt) {
       this.createPrompt('[E] Vasculhar', -70 * this.s, '#ffdd88');
     } else if (nearDoor && !this.activePrompt) {
       this.createPrompt(this.keyFound ? TEXTS.ENTER : '🔒 Trancada', -70 * this.s, this.keyFound ? '#ffdd44' : '#ff6666');
-    } else if (!nearWardrobe && !nearPool && !nearDrawer && !nearDoor && this.activePrompt) {
+    } else if (!nearWardrobe && !nearDrawer && !nearDoor && this.activePrompt) {
       this.activePrompt.destroy();
       this.activePrompt = null;
     }
@@ -1698,7 +2156,6 @@ class Phase2Scene extends BaseScene {
 class Phase3Scene extends BaseScene {
   constructor() {
     super('Phase3Scene');
-    this.worldWidth = 4000;
   }
 
   init() {
@@ -1711,6 +2168,7 @@ class Phase3Scene extends BaseScene {
     GameState.door = 3;
     GameState.updateUI();
     this.showPhaseTitle(TEXTS.PHASE_3);
+    this.physics.world.setBounds(0, 0, this.worldWidth, GAME_H + 100);
 
     // ── Estado da fase ──────────────────────────────────────────────────
     this.timeLeft = 60;
@@ -1722,11 +2180,11 @@ class Phase3Scene extends BaseScene {
 
     // ── Estado da água ──────────────────────────────────────────────────
     // Nível BASE (água sobe até aqui quando alavanca 1 está ativada)
-    this.waterLevelBase = 260;          // nível alto (submerge alavanca 2)
+    this.waterLevelBase = 200;          // nível alto (submerge alavanca 2)
     this.waterLevelLow = GAME_H + 100; // abaixo da tela (água baixa)
-    this.waterLevel = GAME_H + 100; // começa fora
+    this.waterLevel = GAME_H + 300; // começa fora
     this.waterTargetLevel = GAME_H + 100; // alvo atual
-    this.waterRiseSpeed = 1.2;          // px por frame subindo (suave)
+    this.waterRiseSpeed = 1.0;          // px por frame subindo (suave)
     this.waterFallSpeed = 2.0;          // px por frame descendo (mais rápido)
     this.waterRising = false;        // alavanca 1 ativa?
 
@@ -1736,7 +2194,6 @@ class Phase3Scene extends BaseScene {
     this.button1Revealed = false;  // botão 1 está visível (debaixo do bloco)
     this.button1Pressed = false;  // botão 1 foi pressionado?
     this.button2Revealed = false;  // botão 2 foi revelado?
-    this.button2Pressed = false;  // botão 2 foi pressionado?
     this.doorBlockOpen = false;  // bloco esquerdo da porta está aberto?
     this.doorBlockTimer = null;   // timer para fechar o bloco da porta
     this.concreteSliding = false;  // bloco de concreto animando?
@@ -1767,7 +2224,7 @@ class Phase3Scene extends BaseScene {
 
     // ── Câmera ──────────────────────────────────────────────────────────
     this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_H);
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1, 0, 125);
 
     this.startTimer();
   }
@@ -1848,15 +2305,16 @@ class Phase3Scene extends BaseScene {
 
     // ── Plataformas primeira metade ─────────────────────────────────────
     const platforms1 = [
-      { x: 100, y: 350, w: 150 },
-      { x: 350, y: 270, w: 120 },
-      { x: 600, y: 190, w: 130 },
-      { x: 200, y: 140, w: 100 },
+      { x: 70, y: 170, w: 100 },
+      { x: 210, y: 300, w: 110 },
+      { x: 410, y: 250, w: 110 },
+      { x: 570, y: 170, w: 120 },
+      { x: 760, y: 240, w: 100 },
     ];
 
     // ── Plataformas segunda metade ──────────────────────────────────────
     const platforms2 = [
-      { x: 1700, y: floorY2 - 230, w: 130 }, // ← alavanca 2 fica aqui (alta, precisa de água)
+      { x: 1500, y: floorY2 - 230, w: 130 }, // ← alavanca 2 fica aqui (alta, precisa de água)
       { x: 2750, y: floorY2 - 170, w: 120 },
       { x: 3000, y: floorY2 - 250, w: 130 },
       { x: 3250, y: floorY2 - 180, w: 120 },
@@ -1904,7 +2362,7 @@ class Phase3Scene extends BaseScene {
     this.buildDoor(dx, dy, dw, dh);
 
     // ── Blocos de concreto ao redor da porta (visual) ───────────────────
-    this.drawDoorConcreteBlocks(g, dx, dy, dw, dh);
+    this.drawDoorConcreteBlocks(dx, dy, dw, dh);
   }
 
   buildDoor(dx, dy, dw, dh) {
@@ -1934,15 +2392,16 @@ class Phase3Scene extends BaseScene {
     this.doorDx = dx; this.doorDy = dy; this.doorDw = dw; this.doorDh = dh;
   }
 
-  drawDoorConcreteBlocks(g, dx, dy, dw, dh) {
-    // Blocos de concreto finos ao redor da porta
+  drawDoorConcreteBlocks(dx, dy, dw, dh) {
+    const g = this.add.graphics().setDepth(7);
+
     // Bloco superior
     g.fillStyle(0x2a3a4a);
     g.fillRect(dx - 8, dy - 14, dw + 16, 10);
     g.fillStyle(0x3a5060, 0.6);
     g.fillRect(dx - 8, dy - 14, dw + 16, 2);
 
-    // Bloco direito (fixo — parede direita está perto)
+    // Bloco direito
     g.fillStyle(0x2a3a4a);
     g.fillRect(dx + dw + 4, dy - 14, 10, dh + 22);
     g.fillStyle(0x3a5060, 0.6);
@@ -1955,27 +2414,27 @@ class Phase3Scene extends BaseScene {
   createDoorBlock() {
     const dx = this.doorDx, dy = this.doorDy, dh = this.doorDh;
 
-    // Bloco fica à esquerda da porta
     const bx = dx - 8;
     const bw = 10;
     const bh = dh + 22;
-    const by = dy - 14; // posição Y fechado (bloqueando)
+    const by = dy - 14;
 
     this.doorBlockClosedY = by;
-    this.doorBlockOpenY = by - bh - 20; // sobe para fora do frame
+    this.doorBlockOpenY = by - bh - 20;
     this.doorBlockY = by;
     this.doorBlockTargetY = by;
 
-    // Gráfico do bloco (será redesenhado no update)
-    this.doorBlockGfx = this.add.graphics().setDepth(9);
-    this._redrawDoorBlock();
+    // ← Salva ANTES de chamar _redrawDoorBlock
+    this._doorBlockBx = bx;
+    this._doorBlockBw = bw;
+    this._doorBlockBh = bh;
 
-    // Física do bloco (colisão com o player para impedir entrada)
+    this.doorBlockGfx = this.add.graphics().setDepth(9);
+    this._redrawDoorBlock(); // ← agora as refs já existem
+
     this.doorBlockPhysRect = this.add.rectangle(bx + bw / 2, by + bh / 2, bw, bh).setVisible(false);
     this.physics.add.existing(this.doorBlockPhysRect, true);
     this.platforms.add(this.doorBlockPhysRect);
-
-    this._doorBlockBx = bx; this._doorBlockBw = bw; this._doorBlockBh = bh;
   }
 
   _redrawDoorBlock() {
@@ -2003,8 +2462,8 @@ class Phase3Scene extends BaseScene {
   //  Posição: início do cenário, chão da primeira metade, próxima à parede E
   // ════════════════════════════════════════════════════════════════════════
   createLever1() {
-    const lx = 120;
-    const ly = this.floorY - 32; // em cima do chão
+    const lx = 630;
+    const ly = 140;
 
     this.lever1X = lx;
     this.lever1Y = ly;
@@ -2023,7 +2482,7 @@ class Phase3Scene extends BaseScene {
   createLever2() {
     // Plataforma de referência: { x: 1700, y: floorY2 - 230, w: 130 }
     const platY = this.floorY2 - 230;
-    const platX = 1700;
+    const platX = 1500;
     const platW = 130;
 
     const lx = platX + platW / 2; // centro da plataforma
@@ -2071,13 +2530,64 @@ class Phase3Scene extends BaseScene {
     g.fillRect(x - 8, y + 26, 16, 5);
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  BOTÕES — design unificado + ativação por colisão
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _drawButton(g, x, y, pressed, color) {
+    g.clear();
+    const col = Phaser.Display.Color.HexStringToColor(color).color;
+    const w = 44, h = 10, r = 7; // retângulo fino e largo
+
+    // Sombra/base mais escura
+    g.fillStyle(0x111820);
+    g.fillRect(x - w / 2 + 2, y - h / 2 + 2, w, h);
+
+    // Corpo do botão
+    g.fillStyle(pressed ? col : 0x1e2e3e);
+    g.fillRect(x - w / 2, y - h / 2, w, h);
+
+    // Borda colorida
+    g.lineStyle(1.5, col, pressed ? 1.0 : 0.45);
+    g.strokeRect(x - w / 2, y - h / 2, w, h);
+
+    // Semicírculo central (sobe do retângulo)
+    g.fillStyle(pressed ? col : 0x2a3e52);
+    g.fillCircle(x, y - h / 2, r); // centro no topo do rect
+    g.lineStyle(1.5, col, pressed ? 1.0 : 0.45);
+    g.strokeCircle(x, y - h / 2, r);
+
+    // Brilho no semicírculo
+    g.fillStyle(0xffffff, pressed ? 0.35 : 0.08);
+    g.fillCircle(x - 2, y - h / 2 - 2, r * 0.45);
+
+    // Dois pontinhos laterais decorativos
+    g.fillStyle(col, pressed ? 0.9 : 0.3);
+    g.fillCircle(x - w / 2 + 6, y, 2);
+    g.fillCircle(x + w / 2 - 6, y, 2);
+  }
+
+  // Cria sensor de colisão para um botão (player OU caixote disparam)
+  _createButtonSensor(zone, onActivate) {
+    // Player
+    this.physics.add.overlap(this.player, zone, () => {
+      onActivate();
+    }, null, this);
+
+    // Caixote (se existir no momento da criação)
+    if (this.crate) {
+      this.physics.add.overlap(this.crate, zone, () => {
+        onActivate();
+      }, null, this);
+    }
+  }
   // ════════════════════════════════════════════════════════════════════════
   //  BOTÃO 1 + estrutura de concreto + caixote
   //  Posição: próximo à parede/escada, chão segunda metade
   // ════════════════════════════════════════════════════════════════════════
   createButton1Setup() {
     // Botão 1 fica logo após a descida, próximo à parede da escada
-    const btn1X = 1500;
+    const btn1X = 1200;
     const btn1Y = this.floorY2; // nível do chão
 
     this.btn1X = btn1X;
@@ -2166,13 +2676,20 @@ class Phase3Scene extends BaseScene {
     this.platforms.add(this.slidingBlockPhys);
 
     // ── Botão 1 (no centro da abertura, inicialmente coberto) ────────────
-    const btnCenterX = bx + inner / 2;             // centro da abertura
+    const btnCenterX = bx + inner / 2;
     this.btn1Gfx = this.add.graphics().setDepth(5);
-    this._drawButton(this.btn1Gfx, btnCenterX, by - 8, this.button1Pressed, '#ffaa00');
+    this._drawButton(this.btn1Gfx, btnCenterX, by - 4, false, '#ffaa00');
 
-    // Zona de interação — só funciona quando button1Revealed = true
-    this.button1Zone = this.add.zone(btnCenterX, by - 8, inner, 20);
+    this.button1Zone = this.add.zone(btnCenterX, by - 4, inner, 20);
     this.physics.add.existing(this.button1Zone, true);
+
+    this._createButtonSensor(this.button1Zone, () => {
+      if (!this.button1Revealed || this.button1Pressed) return;
+      this.button1Pressed = true;
+      this._drawButton(this.btn1Gfx, btnCenterX, by - 4, true, '#ffaa00');
+      this.rock2TargX = this.btn2X + this.rock2W + 20;
+      this.time.delayedCall(800, () => { this._createButton2(); });
+    });
   }
 
   _redrawSlidingBlock() {
@@ -2257,12 +2774,20 @@ class Phase3Scene extends BaseScene {
   // ════════════════════════════════════════════════════════════════════════
   _createButton2() {
     this.btn2Gfx = this.add.graphics().setDepth(5);
-    this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 8, false, '#00aaff');
+    this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 4, false, '#00aaff');
 
-    this.button2Zone = this.add.zone(this.btn2X, this.btn2Y - 8, 50, 20);
+    this.button2Zone = this.add.zone(this.btn2X, this.btn2Y - 4, 50, 20);
     this.physics.add.existing(this.button2Zone, true);
-
     this.button2Revealed = true;
+
+    this._createButtonSensor(this.button2Zone, () => {
+      if (!this.button2Revealed || this.button2Pressed) return;
+      if (!this._crateOnButton2()) {
+        this._flashButton2();
+        return;
+      }
+      this._activateButton2();
+    });
   }
 
   _redrawRock2() {
@@ -2286,23 +2811,6 @@ class Phase3Scene extends BaseScene {
     // Brilho
     g.fillStyle(0x7a8a99, 0.4);
     g.fillRect(rx + 6, ry + 4, 8, 3);
-  }
-
-  _drawButton(g, x, y, pressed, color) {
-    g.clear();
-    const col = Phaser.Display.Color.HexStringToColor(color).color;
-
-    // Corpo do botão
-    g.fillStyle(pressed ? col : 0x334455);
-    g.fillEllipse(x, y, 26, 12);
-
-    // Anel externo
-    g.lineStyle(2, col, pressed ? 1.0 : 0.5);
-    g.strokeEllipse(x, y, 32, 16);
-
-    // Brilho
-    g.fillStyle(0xffffff, pressed ? 0.3 : 0.1);
-    g.fillEllipse(x - 4, y - 2, 10, 5);
   }
 
   _updateRock2() {
@@ -2371,7 +2879,10 @@ class Phase3Scene extends BaseScene {
     g.fillRect(0, this.waterLevel + 4, this.worldWidth, 3);
 
     // ── Física da água no player ────────────────────────────────────────
-    if (this.player.y > this.waterLevel + 10 && !this.transitioning) {
+    // VERIFICA se o player está DENTRO da água (entre a superfície e o fundo)
+    const isUnderwater = this.player.y > this.waterLevel && this.player.y < this.waterLevel + 200;
+
+    if (isUnderwater && !this.transitioning) {
       this.player.body.setGravityY(-500);
       this.player.body.setMaxVelocityY(80);
 
@@ -2447,12 +2958,9 @@ class Phase3Scene extends BaseScene {
   //  ANIMAÇÃO: bloco da porta (sobe ao abrir)
   // ════════════════════════════════════════════════════════════════════════
   _updateDoorBlock() {
-    if (!this.doorBlockOpen) return;
-
     const diff = this.doorBlockY - this.doorBlockTargetY;
     if (Math.abs(diff) > 0.5) {
       this.doorBlockY -= diff * 0.07;
-      // Move também a física
       const bx = this._doorBlockBx;
       const bh = this._doorBlockBh;
       this.doorBlockPhysRect.setPosition(bx + this._doorBlockBw / 2, this.doorBlockY + bh / 2);
@@ -2469,7 +2977,7 @@ class Phase3Scene extends BaseScene {
 
     // ── Porta ───────────────────────────────────────────────────────────
     if (this.isNear(this.doorZone)) {
-      if (!this.button2Pressed || !this.doorBlockOpen) {
+      if (!this.doorBlockOpen) {
         this.showLockedMessage();
         return;
       }
@@ -2511,31 +3019,6 @@ class Phase3Scene extends BaseScene {
       this._scheduleRevealButton1();
       return;
     }
-
-    // ── Botão 1 ──────────────────────────────────────────────────────────
-    if (this.button1Revealed && !this.button1Pressed && this.isNear(this.button1Zone)) {
-      this.button1Pressed = true;
-      this._drawButton(this.btn1Gfx, this._btn1Bx + this._btn1Inner / 2, this._btn1By - 8, true, '#ffaa00');
-
-      // Desliza a pedra para o lado
-      this.rock2TargX = this.btn2X + this.rock2W + 20;
-
-      // Cria o botão 2 após a pedra ter saído
-      this.time.delayedCall(800, () => { this._createButton2(); });
-      return;
-    }
-
-    // ── Botão 2 ──────────────────────────────────────────────────────────
-    if (this.button2Revealed && !this.button2Pressed && this.isNear(this.button2Zone)) {
-      // Verifica se o caixote está em cima do botão 2
-      if (!this._crateOnButton2()) {
-        // Pisca o botão — precisa do caixote
-        this._flashButton2();
-        return;
-      }
-      this._activateButton2();
-      return;
-    }
   }
 
   _scheduleRevealButton1() {
@@ -2568,24 +3051,14 @@ class Phase3Scene extends BaseScene {
   }
 
   _activateButton2() {
-    this.button2Pressed = true;
-    this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y, true, '#00aaff');
-
-    // Abre o bloco esquerdo da porta (sobe)
     this.doorBlockOpen = true;
     this.doorBlockTargetY = this.doorBlockOpenY;
-
-    // Timer: bloco fecha após 8 segundos (tempo desafiador porém possível)
-    this.doorBlockTimer = this.time.delayedCall(8000, () => {
-      this._closeDoorBlock();
-    });
+    this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 4, true, '#00aaff');
   }
 
   _closeDoorBlock() {
     this.doorBlockOpen = false;
     this.doorBlockTargetY = this.doorBlockClosedY;
-    this.button2Pressed = false;
-    this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y, false, '#00aaff');
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -2800,13 +3273,27 @@ class Phase3Scene extends BaseScene {
     this._updateDoorBlock();
     this._drawCrate();
 
+    // ── Botão 2: mantém porta aberta só enquanto caixote estiver em cima ──
+    if (this.button2Revealed) {
+      const crateOnBtn = this._crateOnButton2();
+      if (crateOnBtn && !this.doorBlockOpen) {
+        this.doorBlockOpen = true;
+        this.doorBlockTargetY = this.doorBlockOpenY;
+        this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 4, true, '#00aaff');
+      } else if (!crateOnBtn && this.doorBlockOpen) {
+        this.doorBlockOpen = false;
+        this.doorBlockTargetY = this.doorBlockClosedY;
+        this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 4, false, '#00aaff');
+      }
+    }
+
     // ── Prompts de interação ────────────────────────────────────────────
     let promptText = null;
     let promptColor = '#ffdd44';
     let promptZone = null;
 
     if (this.isNear(this.doorZone)) {
-      const open = this.button2Pressed && this.doorBlockOpen;
+      const open = this.doorBlockOpen;
       promptText = open ? TEXTS.ENTER : '🔒';
       promptColor = open ? '#ffdd44' : '#ff6666';
       promptZone = this.doorZone;
@@ -3474,7 +3961,6 @@ class Phase5Scene extends BaseScene {
   abrirBau() {
     if (this.bauAberto) return;
 
-    console.log("ABRINDO BAÚ!");
     this.bauAberto = true;
 
     // Redesenhar baú aberto
@@ -3745,419 +4231,1244 @@ class Phase5Scene extends BaseScene {
   }
 }
 
-// =============================================
-//  CENA: FASE FINAL - BIBLIOTECA (COM DECORAÇÕES)
-// =============================================
+// ============================================================
+//  FinalScene.js  —  Fase Final: Biblioteca
+//  Baseada em BaseScene. Estilo Pac-Man + Doors (Figure)
+//  Todas as constantes estão encapsuladas no constructor().
+//
+//  SONS: todos marcados com comentário — substitua pelos
+//        arquivos de áudio corretos antes de publicar.
+//
+//  SPRITESHEET: figure.png (880x1216, 4 cols x 3 rows)
+//    linha 0 (frames 0-3): caminhada
+//    linha 1 (frames 4-7): ataque/alerta
+//    linha 2 (frames 8-11): rastejar (chase)
+// ============================================================
+
 class FinalScene extends BaseScene {
   constructor() {
     super('FinalScene');
-    this.worldWidth = GAME_W;
+
+    // ── Constantes do labirinto ───────────────────────────────
+    this.TILE = 32; //unidade básica de mapas/cenários 2d >> tem 32x32 = 1024, que é a largura do sprite do Figure (4 frames)
+    this.COLS = 31; // largura do labirinto (número de colunas)
+    this.ROWS = 23; //  altura do labirinto (número de linhas)
+    this.MAZE_OFFSET_X = 0; // para centralizar o labirinto na tela, se necessário
+    this.MAZE_OFFSET_Y = 0; // para centralizar o labirinto na tela, se necessário
+
+    /*Matriz do labirinto (31x23) — 713 caracteres, cada um representando um tile:
+    1 → Parede(bloqueado)
+    0 → Caminho / Chão(livre)
+    S → Start(ponto de início do jogador) - linha 1
+    D → Door(porta) - linha 21
+    */
+    this.RAW_MAZE = [
+      "1111111111111111111111111111111", // 0
+      "1S00000000010001000100010000001", // 1
+      "1010111010111010101110101111101", // 2
+      "1010001010001010100010100000101", // 3
+      "1011101011101010111010111110101", // 4
+      "1000101000101010000010000010001", // 5
+      "1110101110101111101110111010111", // 6
+      "1000100010000000000010001010001", // 7
+      "1011111011101111101011101110101", // 8
+      "1010000010001000100010000010101", // 9
+      "1010111110111010111110111110101", // 10
+      "1000100000001000000010000010001", // 11
+      "1111101111101111101110111010111", // 12
+      "1000001000000000000000001010001", // 13  corredor central
+      "1011111011101111101011101110101", // 14
+      "1010000010001000100010000010101", // 15
+      "1010111110111010111110111110101", // 16
+      "1000100000001000000010000000001", // 17
+      "1110101110101111101110111010111", // 18
+      "1000001010001010000010001010001", // 19
+      "1011101011101010111010111010101", // 20
+      "100000001000100010001000000000D", // 21  D = porta
+      "1111111111111111111111111111111", // 22
+    ];
+
+    // Posições dos livros com código (5 tomos vermelhos)
+    this.CODE_POSITIONS = [
+      { col: 5, row: 7 },
+      { col: 15, row: 3 },
+      { col: 25, row: 9 },
+      { col: 9, row: 17 },
+      { col: 27, row: 21 }, // último — perto da porta, área mais perigosa
+    ];
+
+    // Os 5 dígitos que formam a senha final
+    this.DOOR_CODES = ["4", "7", "2", "9", "1"];
+
+    this.CODE_BOOK_DATA = [
+      { title: "Tomo Vermelho I", code: this.DOOR_CODES[0] },
+      { title: "Tomo Vermelho II", code: this.DOOR_CODES[1] },
+      { title: "Tomo Vermelho III", code: this.DOOR_CODES[2] },
+      { title: "Tomo Vermelho IV", code: this.DOOR_CODES[3] },
+      { title: "Tomo Vermelho V", code: this.DOOR_CODES[4] },
+    ];
+
+    // Posições dos livros comuns (sem código — apenas atmosfera)
+    this.COMMON_POSITIONS = [
+      { col: 3, row: 5 },
+      { col: 11, row: 1 },
+      { col: 19, row: 5 },
+      { col: 7, row: 11 },
+      { col: 21, row: 13 },
+      { col: 13, row: 19 },
+      { col: 3, row: 19 },
+      { col: 23, row: 3 },
+      { col: 17, row: 11 },
+      { col: 29, row: 15 },
+      { col: 5, row: 21 },
+      { col: 25, row: 17 },
+    ];
+
+
+    this.FIGURE_PATROL_PATH = [
+      { col: 1, row: 13 },
+      { col: 7, row: 13 },
+      { col: 7, row: 7 },
+      { col: 13, row: 7 },
+      { col: 13, row: 13 },
+      { col: 19, row: 13 },
+      { col: 19, row: 7 },
+      { col: 25, row: 7 },
+      { col: 25, row: 17 },
+      { col: 19, row: 17 },
+      { col: 13, row: 17 },
+      { col: 7, row: 17 },
+      { col: 1, row: 17 },
+      { col: 1, row: 13 },
+    ];
+    // ── Constantes do Figure ──────────────────────────────────
+    this.FIGURE_PATROL_SPEED = 3.2;
+    this.FIGURE_CHASE_SPEED = 6.8;
+    this.FIGURE_HEAR_RADIUS = 6;
+    this.FIGURE_KILL_RADIUS = 1;
+    this.HEARTBEAT_MIN_DIST = 10;
+    this.HEARTBEAT_MAX_DIST = 4;
+    this.SOUND_MOVE_LEVEL = 1.0;
+    this.SOUND_IDLE_LEVEL = 0.0;
+  }
+  preload() {
+    super.preload();
+    this.load.spritesheet('figure', 'assets/images/figure.png', {
+      frameWidth: 220,
+      frameHeight: 405,
+    });
   }
 
+  // ── Estado próprio da fase ────────────────────────────────
+  init() {
+    super.init();
+
+    this.codesFound = [];
+    this.bookUIOpen = false;
+    this.inputBlocked = false;
+
+    // Movimento em grid (não usa o sistema de física do BaseScene para mover)
+    this.playerTile = { col: 1, row: 1 };
+    this.playerPx = { x: 0, y: 0 };
+    this.moveQueue = null;
+    this.moving = false;
+    this.moveDir = { dx: 0, dy: 0 };
+    this.moveProgress = 0;
+    this.MOVE_SPEED = 6.5; // tiles/segundo — mais lento que Pac-Man para tensão
+
+    this.facingDir = 'right';
+    this.stepCount = 0;
+  }
+
+  // ── Posição pixel do centro de um tile ───────────────────
+  tileToPixel(col, row) {
+    return {
+      x: this.MAZE_OFFSET_X + col * this.TILE + this.TILE / 2,
+      y: this.MAZE_OFFSET_Y + row * this.TILE + this.TILE / 2,
+    };
+  }
+
+  isWalkable(col, row) {
+    if (col < 0 || col >= this.COLS || row < 0 || row >= this.ROWS) return false;
+    return this.RAW_MAZE[row][col] !== '1';
+  }
+
+  parseMaze() {
+    this.maze = this.RAW_MAZE.map(r => r.split(''));
+  }
+  setupWorld() {
+    // vazio — câmera configurada no create()
+  }
+
+  // ─────────────────────────────────────────────────────────
   create() {
+    // Recalcula TILE para que o labirinto seja ~1.8x maior que a tela
+    // garantindo que a câmera sempre tenha espaço para rolar
+    this.TILE = Math.ceil(Math.max(
+      (GAME_W * 1.8) / this.COLS,   // baseado na largura
+      (GAME_H * 1.8) / this.ROWS    // baseado na altura
+    ));
+    this.MAZE_W = this.COLS * this.TILE;
+    this.MAZE_H = this.ROWS * this.TILE;
+
+    // Atualiza worldWidth ANTES do super.create() para o setupWorld usar o valor certo
+    this.worldWidth = this.MAZE_W;
+
+
+    // Chama o create do BaseScene (configura câmera, player, controles)
+    // MAS não queremos o player de física padrão se movendo livremente,
+    // então desativamos a gravidade após o super.create()
     super.create();
-    GameState.door = 100;
+    const worldW = this.MAZE_W;
+    const worldH = this.MAZE_H;
+    this.physics.world.setBounds(0, 0, worldW, worldH);
+    this.cameras.main.setBounds(0, 0, worldW, worldH);
+    this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+
+    console.log('TILE:', this.TILE);
+    console.log('MAZE_W:', this.MAZE_W);
+    console.log('MAZE_H:', this.MAZE_H);
+    console.log('GAME_W:', GAME_W);
+    console.log('GAME_H:', GAME_H);
+    console.log('camera bounds:', this.cameras.main._bounds);
+
+    GameState.door = 6;
     GameState.updateUI();
     this.showPhaseTitle(TEXTS.PHASE_FINAL);
 
-    // Configurações específicas
-    this.solvedCount = 0;
-    this.totalPuzzles = 3;
-    this.activePuzzle = null;
-    this.puzzles = [];
+    this.parseMaze();
 
-    this.platforms = this.physics.add.staticGroup();
-    this.puzzleZones = this.physics.add.staticGroup();
+    // Desativa física do player — movimento é grid-based aqui
+    this.player.body.setGravityY(0);
+    this.player.body.setVelocity(0, 0);
+    this.player.body.setImmovable(true);
+    this.player.body.allowGravity = false;
 
-    this.buildLibrary();
-    this.createPuzzles();
-    this.createCandles();
+    // Posiciona player no spawn
+    const spawn = this.tileToPixel(1, 1);
+    this.player.setPosition(spawn.x, spawn.y);
+    this.playerPx = { x: spawn.x, y: spawn.y };
 
-    this.physics.add.collider(this.player, this.platforms);
-    this.physics.add.overlap(this.player, this.puzzleZones, this.nearPuzzle, null, this);
-  }
+    // Constrói o mundo
+    this.buildBackground();
+    this.buildMaze();
+    this.createLibraryDoor();   // porta de saída específica do labirinto
+    this.createBooks();
+    this.createWallLights();
+    this.createDustParticles();
+    this.createHUD();
+    this.createBookUI();
 
-  buildLibrary() {
-    const g = this.add.graphics();
-
-    // Fundo
-    g.fillStyle(0x06060e);
-    g.fillRect(0, 0, this.worldWidth, GAME_H);
-
-    // Chão
-    g.fillStyle(0x0e0e1a);
-    g.fillRect(0, this.floorY, this.worldWidth, 60);
-    g.fillStyle(0x1a1a28);
-    g.fillRect(0, this.floorY, this.worldWidth, 3);
-
-    // Física do chão
-    const floor = this.add.rectangle(this.worldWidth / 2, this.floorY + 30, this.worldWidth, 60)
-      .setVisible(false);
-    this.physics.add.existing(floor, true);
-    this.platforms.add(floor);
-
-    // Estantes como plataformas
-    const shelves = [
-      { x: 50, y: 320, w: 160 }, { x: 350, y: 260, w: 160 },
-      { x: 650, y: 300, w: 160 }, { x: 700, y: 200, w: 120 }
-    ];
-
-    shelves.forEach(s => {
-      // Estante
-      g.fillStyle(0x1a0e05);
-      g.fillRect(s.x, s.y, s.w, GAME_H - 60 - s.y);
-      g.fillStyle(0x2a1a08);
-      g.fillRect(s.x, s.y, s.w, 14);
-
-      // Livros
-      const bookColors = [0x8b0000, 0x006400, 0x00008b, 0x8b6914, 0x4b0082, 0x8b4513];
-      for (let bx = s.x + 4; bx < s.x + s.w - 4; bx += 12) {
-        g.fillStyle(bookColors[Math.floor((bx / 12) % bookColors.length)], 0.8);
-        g.fillRect(bx, s.y - 20, 10, 20);
-        g.fillStyle(0xffffff, 0.1);
-        g.fillRect(bx + 2, s.y - 18, 1, 16);
-      }
-
-      const plat = this.add.rectangle(s.x + s.w / 2, s.y + 8, s.w, 16).setVisible(false);
-      this.physics.add.existing(plat, true);
-      this.platforms.add(plat);
+    // Tecla E fecha livro também
+    this.enterKey.on('down', () => {
+      if (this.bookUIOpen) this.closeBook();
     });
 
-    // Estantes de parede (decorativas)
-    for (let x = 0; x < this.worldWidth; x += 120) {
-      g.fillStyle(0x120a04, 0.8);
-      g.fillRect(x, 30, 110, this.floorY - 200);
-      g.fillStyle(0x1e1008, 0.5);
-      g.fillRect(x, 30, 110, 3);
+    // Figure — PARTE 2
+    this.createFigure();
 
-      for (let by = 50; by < this.floorY - 200; by += 30) {
-        for (let bx = x + 4; bx < x + 106; bx += 12) {
-          const bc = [0x6b0000, 0x005000, 0x00006b, 0x6b5014, 0x3b0062][Math.floor((bx * by / 100) % 5)];
-          g.fillStyle(bc, 0.6);
-          g.fillRect(bx, by, 10, 26);
+    this.cameras.main.fadeIn(1000, 10, 6, 8);
+  }
+
+  // ── Fundo geral — cobre o mundo inteiro ──────────────────
+  buildBackground() {
+    const worldW = this.MAZE_W + this.MAZE_OFFSET_X * 2;
+    const worldH = this.MAZE_H + this.MAZE_OFFSET_Y * 2;
+    this.add.rectangle(worldW / 2, worldH / 2, worldW, worldH, 0x0a0608).setDepth(0);
+  }
+
+  // ── Constrói o labirinto visualmente ─────────────────────
+  buildMaze() {
+    const g = this.add.graphics().setDepth(1);
+    const gDeco = this.add.graphics().setDepth(2);
+
+    for (let r = 0; r < this.ROWS; r++) {
+      for (let c = 0; c < this.COLS; c++) {
+        const px = this.MAZE_OFFSET_X + c * this.TILE;
+        const py = this.MAZE_OFFSET_Y + r * this.TILE;
+        const ch = this.maze[r][c];
+
+        if (ch === '1') {
+          // ── Estante de livros ──────────────────────────
+          g.fillStyle(0x1a0f08);
+          g.fillRect(px, py, this.TILE, this.TILE);
+          // Moldura da estante
+          g.lineStyle(1, 0x3d2010, 0.9);
+          g.strokeRect(px + 1, py + 1, this.TILE - 2, this.TILE - 2);
+          // Duas prateleiras horizontais
+          g.fillStyle(0x2a1508);
+          g.fillRect(px + 2, py + Math.floor(this.TILE * 0.33), this.TILE - 4, 2);
+          g.fillRect(px + 2, py + Math.floor(this.TILE * 0.66), this.TILE - 4, 2);
+          // Livros decorativos nas prateleiras
+          this.drawShelfBooks(gDeco, px, py);
+        } else {
+          // ── Corredor ──────────────────────────────────
+          g.fillStyle(0x0f0c1a);
+          g.fillRect(px, py, this.TILE, this.TILE);
+          // Tábuas sutis no piso
+          g.lineStyle(0.5, 0x1a1628, 0.25);
+          if ((c + r) % 4 === 0) g.strokeRect(px + 2, py + 2, this.TILE - 4, this.TILE - 4);
         }
       }
     }
 
-    // A porta final (trancada)
-    const dx = GAME_W / 2 - 30, dy = this.floorY - 110;
-    g.fillStyle(0x2a1a00);
-    g.fillRect(dx - 4, dy - 6, 68, 116);
-    g.fillStyle(0x1a0e00);
-    g.fillRect(dx, dy, 60, 110);
-    g.lineStyle(2, 0x886600, 0.5);
-    g.strokeRect(dx, dy, 60, 110);
-
-    // Cadeado
-    g.fillStyle(0x775500);
-    g.fillRect(dx + 22, dy + 50, 16, 14);
-    g.lineStyle(3, 0x886600, 0.8);
-    g.beginPath();
-    g.arc(dx + 30, dy + 50, 7, Math.PI, 0);
-    g.strokePath();
-
-    this.add.text(GAME_W / 2, dy - 20, 'DOOR 100', {
-      fontSize: '12px',
-      fontFamily: 'Courier New',
-      color: '#553300',
-      letterSpacing: 2
-    }).setOrigin(0.5);
+    // Borda geral do labirinto
+    g.lineStyle(2, 0x3d2010, 0.9);
+    g.strokeRect(this.MAZE_OFFSET_X, this.MAZE_OFFSET_Y, this.MAZE_W, this.MAZE_H);
   }
 
-  createCandles() {
-    const g = this.add.graphics();
-    const positions = [120, 280, 480, 620, 780];
-
-    positions.forEach(x => {
-      // Vela
-      g.fillStyle(0xeeeecc, 0.9);
-      g.fillRect(x - 2, this.floorY - 25, 4, 25);
-      g.fillStyle(0xffdd44, 0.8);
-      g.fillCircle(x, this.floorY - 27, 5);
-
-      // Brilho
-      const glow = this.add.rectangle(x, this.floorY - 30, 20, 20, 0xffdd44, 0.08);
-      this.tweens.add({
-        targets: glow,
-        alpha: { from: 0.04, to: 0.14 },
-        duration: Phaser.Math.Between(400, 700),
-        yoyo: true,
-        repeat: -1
-      });
-    });
-  }
-
-  createPuzzles() {
-    const g = this.add.graphics().setDepth(3);
-
-    const puzzleData = [
-      { x: 150, code: '? + ? = 10\n(5 + _)', answer: '5', hint: 'Dois iguais que somam 10' },
-      { x: 450, code: 'CHUCHU\n ao cubo', answer: '3', hint: 'Letras de CHUCHU' },
-      { x: 750, code: 'Porta\n___ + 1\n= 100', answer: '99', hint: 'Porta anterior à final' },
+  drawShelfBooks(g, px, py) {
+    const palette = [0x8b1a1a, 0x1a4a8b, 0x1a6b2a, 0x7a5a1a, 0x6b1a6b, 0x8b4a1a];
+    // Três faixas de livros dentro do tile (acima de cada prateleira)
+    const shelfYs = [
+      py + 2,                                        // topo do tile
+      py + Math.floor(this.TILE * 0.33) + 2,         // acima da 1ª prateleira
+      py + Math.floor(this.TILE * 0.66) + 2,         // acima da 2ª prateleira
     ];
+    // Altura disponível por faixa (até a próxima prateleira menos 2px)
+    const rowH = Math.floor(this.TILE * 0.33) - 4;
 
-    this.puzzles = puzzleData.map((p, i) => {
-      // Pedestal
-      g.fillStyle(0x1a1408);
-      g.fillRect(p.x - 20, this.floorY - 55, 40, 55);
-      g.fillStyle(0x2a2010);
-      g.fillRect(p.x - 22, this.floorY - 60, 44, 8);
-      g.fillStyle(0x3a3018);
-      g.fillRect(p.x - 18, this.floorY - 55, 36, 4);
-
-      // Orbe brilhante
-      g.fillStyle(0x4444aa, 0.6);
-      g.fillCircle(p.x, this.floorY - 70, 12);
-      g.fillStyle(0x8888ff, 0.4);
-      g.fillCircle(p.x, this.floorY - 70, 7);
-
-      const orbGlow = this.add.rectangle(p.x, this.floorY - 70, 28, 28, 0x6666ff, 0.08).setDepth(3);
-      this.tweens.add({
-        targets: orbGlow,
-        alpha: { from: 0.04, to: 0.15 },
-        duration: 900,
-        yoyo: true,
-        repeat: -1
-      });
-
-      // Número
-      this.add.text(p.x, this.floorY - 95, `[${i + 1}]`, {
-        fontSize: '12px',
-        fontFamily: 'Courier New',
-        color: '#6666aa',
-        letterSpacing: 2
-      }).setOrigin(0.5).setDepth(4);
-
-      const zone = this.add.zone(p.x, this.floorY - 30, 50, 60);
-      this.physics.add.existing(zone, true);
-      this.puzzleZones.add(zone);
-
-      return { zone, ...p, solved: false };
+    shelfYs.forEach(sy => {
+      let bx = px + 2;
+      while (bx < px + this.TILE - 2) {
+        const bw = Phaser.Math.Between(2, 5);         // livros finos num tile 32px
+        const bh = Phaser.Math.Between(Math.floor(rowH * 0.6), rowH);
+        const col = palette[Phaser.Math.Between(0, palette.length - 1)];
+        g.fillStyle(col, 0.8);
+        g.fillRect(bx, sy, bw, bh);
+        // Lombada dourada
+        g.fillStyle(0xffd080, 0.20);
+        g.fillRect(bx, sy, 1, bh);
+        bx += bw + 1;
+      }
     });
   }
 
-  nearPuzzle(player, zone) {
-    if (this.activePuzzle !== null) return;
+  // ── Arandelas ─────────────────────────────────────────────
+  createWallLights() {
+    const pts = [
+      { c: 0, r: 5 }, { c: 0, r: 13 }, { c: 0, r: 19 },
+      { c: this.COLS - 1, r: 3 }, { c: this.COLS - 1, r: 11 }, { c: this.COLS - 1, r: 17 },
+      { c: 10, r: 0 }, { c: 20, r: 0 }, { c: 10, r: this.ROWS - 1 }, { c: 20, r: this.ROWS - 1 },
+    ];
+    pts.forEach(p => {
+      const lx = this.MAZE_OFFSET_X + p.c * this.TILE + this.TILE / 2;
+      const ly = this.MAZE_OFFSET_Y + p.r * this.TILE + this.TILE / 2;
 
-    const puzzle = this.puzzles.find(p => p.zone === zone);
-    if (!puzzle || puzzle.solved) return;
+      const light = this.add.graphics().setDepth(3);
+      light.fillStyle(0xffdd88, 0.04); light.fillCircle(lx, ly, this.TILE * 4);
+      light.fillStyle(0xffdd88, 0.08); light.fillCircle(lx, ly, this.TILE * 2);
+      light.fillStyle(0xffdd88, 0.18); light.fillCircle(lx, ly, this.TILE * 0.8);
 
-    if (!this.interactHint) {
-      this.interactHint = this.add.text(GAME_W / 2, GAME_H - 90, '[E] Examinar', {
-        fontSize: '14px',
-        fontFamily: 'Courier New',
-        color: '#6666aa',
-        letterSpacing: 2,
-        backgroundColor: '#000000',
-        padding: { x: 8, y: 4 }
-      }).setOrigin(0.5).setDepth(20).setScrollFactor(0);
+      const fix = this.add.graphics().setDepth(4);
+      fix.fillStyle(0x4a3520); fix.fillRect(lx - 4, ly - 8, 8, 12);
+      fix.fillStyle(0xffdd88); fix.fillCircle(lx, ly + 4, 3);
+
+      this.tweens.add({
+        targets: light,
+        alpha: { from: 0.7, to: 1.1 },
+        duration: Phaser.Math.Between(800, 1600),
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+    });
+  }
+
+  // ── Porta da biblioteca (tile D = col 30, row 21) ─────────
+  createLibraryDoor() {
+    // Encontra o tile D no mapa
+    let doorCol = 30, doorRow = 21;
+    for (let r = 0; r < this.ROWS; r++) {
+      for (let c = 0; c < this.COLS; c++) {
+        if (this.RAW_MAZE[r][c] === 'D') { doorCol = c; doorRow = r; }
+      }
+    }
+    this.doorTile = { col: doorCol, row: doorRow };
+
+    const px = this.MAZE_OFFSET_X + doorCol * this.TILE;
+    const py = this.MAZE_OFFSET_Y + doorRow * this.TILE;
+
+    const g = this.add.graphics().setDepth(6);
+    g.fillStyle(COLORS.doorFrame);
+    g.fillRect(px - 3, py - 3, this.TILE + 6, this.TILE + 6);
+    g.fillStyle(COLORS.door);
+    g.fillRect(px + 2, py + 2, this.TILE - 4, this.TILE - 4);
+    g.lineStyle(1, COLORS.highlight, 0.5);
+    g.strokeRect(px + 6, py + 6, this.TILE / 2 - 4, this.TILE - 12);
+    g.strokeRect(px + this.TILE / 2 + 2, py + 6, this.TILE / 2 - 4, this.TILE - 12);
+    g.fillStyle(COLORS.doorGlow);
+    g.fillCircle(px + this.TILE - 10, py + this.TILE / 2, 3);
+
+    this.add.text(px + this.TILE / 2, py - 12, TEXTS.PHASE_FINAL.split(' - ')[0], {
+      fontSize: '10px', fontFamily: 'Courier New',
+      color: '#bb99ff', letterSpacing: 2,
+    }).setOrigin(0.5).setDepth(7);
+
+    const glow = this.add.graphics().setDepth(5);
+    glow.fillStyle(COLORS.doorGlow, 0.08);
+    glow.fillRect(px - 10, py - 10, this.TILE + 20, this.TILE + 20);
+    this.tweens.add({
+      targets: glow, alpha: { from: 0.5, to: 1.3 },
+      duration: 1400, yoyo: true, repeat: -1,
+    });
+
+    // Zona de interação reutilizando o doorZone da BaseScene
+    this.doorZone = this.add.zone(px + this.TILE / 2, py + this.TILE / 2, this.TILE, this.TILE);
+    this.physics.add.existing(this.doorZone, true);
+    this.doorDestination = 'WinScene'; // ajuste conforme sua cena de vitória
+  }
+
+  // ── Livros (coletáveis) ───────────────────────────────────
+  createBooks() {
+    this.bookObjects = [];
+
+    // Tomos com código (vermelhos)
+    this.CODE_BOOK_DATA.forEach((data, i) => {
+      const pos = this.CODE_POSITIONS[i];
+      this.spawnBook(pos.col, pos.row, true, data);
+    });
+
+    // Livros comuns (azuis, sem conteúdo real)
+    this.COMMON_POSITIONS.forEach(pos => {
+      this.spawnBook(pos.col, pos.row, false, null);
+    });
+  }
+
+  spawnBook(col, row, isCode, data) {
+    const { x, y } = this.tileToPixel(col, row);
+    const color = isCode ? 0xcc2222 : 0x335599;
+    const glowColor = isCode ? 0xff5544 : 0x4466cc;
+
+    const g = this.add.graphics().setDepth(5);
+    // Livro
+    g.fillStyle(color);
+    g.fillRect(x - 8, y - 10, 16, 20);
+    g.fillStyle(0xffd080, 0.35);
+    g.fillRect(x - 7, y - 9, 2, 18);
+    // Halo
+    g.fillStyle(glowColor, 0.12);
+    g.fillCircle(x, y, 18);
+
+    this.tweens.add({
+      targets: g,
+      alpha: { from: isCode ? 0.65 : 0.5, to: 1 },
+      duration: isCode ? 900 : 1400,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+
+    this.bookObjects.push({ col, row, isCode, data, gfx: g, collected: false });
+  }
+
+  // ── HUD: 5 slots de código ────────────────────────────────
+  createHUD() {
+    this.add.rectangle(GAME_W / 2, 22, 270, 38, 0x080510, 0.88)
+      .setScrollFactor(0).setDepth(20)
+      .setStrokeStyle(1, 0x3d2010, 0.7);
+
+    this.add.text(GAME_W / 2, 46, 'SEQUÊNCIA DE ACESSO', {
+      fontSize: '8px', fontFamily: 'Courier New',
+      color: '#4a3010', letterSpacing: 3,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(21);
+
+    this.codeSlots = [];
+    for (let i = 0; i < 5; i++) {
+      const sx = GAME_W / 2 - 100 + i * 50;
+
+      const slot = this.add.graphics().setScrollFactor(0).setDepth(21);
+      slot.lineStyle(1, 0x4a3010, 0.8);
+      slot.strokeRect(sx - 14, 8, 28, 28);
+      slot.fillStyle(0x120c06, 0.9);
+      slot.fillRect(sx - 14, 8, 28, 28);
+      // ícone de livro vazio
+      slot.fillStyle(0x2a1a0a, 0.5);
+      slot.fillRect(sx - 7, 12, 14, 18);
+
+      const txt = this.add.text(sx, 22, '—', {
+        fontSize: '14px', fontFamily: 'Courier New', color: '#2a2015',
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(22);
+
+      this.codeSlots.push({ slot, txt, sx, filled: false });
+    }
+  }
+
+  fillCodeSlot(index, digit) {
+    const slot = this.codeSlots[index];
+    if (!slot || slot.filled) return;
+    slot.filled = true;
+
+    slot.slot.clear();
+    slot.slot.lineStyle(1.5, 0xcc2222, 1);
+    slot.slot.strokeRect(slot.sx - 14, 8, 28, 28);
+    slot.slot.fillStyle(0x2a0606, 0.95);
+    slot.slot.fillRect(slot.sx - 14, 8, 28, 28);
+
+    slot.txt.setText(digit).setColor('#ff6644');
+    this.tweens.add({
+      targets: slot.txt,
+      scaleX: { from: 0, to: 1 }, scaleY: { from: 0, to: 1 },
+      duration: 280, ease: 'Back.easeOut',
+    });
+  }
+
+  // ── UI do livro aberto ────────────────────────────────────
+  createBookUI() {
+    const cx = GAME_W / 2, cy = GAME_H / 2;
+    const bW = 480, bH = 290;
+
+    this.bookUIContainer = this.add.container(0, 0)
+      .setScrollFactor(0).setDepth(50).setVisible(false);
+
+    const overlay = this.add.rectangle(cx, cy, GAME_W, GAME_H, 0x000000, 0.72);
+
+    // ── Capa do livro (fundo vermelho escuro — igual para todos) ──
+    const bookCover = this.add.graphics();
+    bookCover.fillStyle(0x3d0808);
+    bookCover.fillRect(cx - bW / 2, cy - bH / 2, bW, bH);
+    bookCover.lineStyle(2, 0x6b1a1a, 1);
+    bookCover.strokeRect(cx - bW / 2, cy - bH / 2, bW, bH);
+    // Lombada
+    bookCover.fillStyle(0x2a0505);
+    bookCover.fillRect(cx - 6, cy - bH / 2, 12, bH);
+    bookCover.lineStyle(0.5, 0x8b3a1a, 0.5);
+    bookCover.lineBetween(cx - 6, cy - bH / 2, cx - 6, cy + bH / 2);
+    bookCover.lineBetween(cx + 6, cy - bH / 2, cx + 6, cy + bH / 2);
+
+    // ── Página esquerda (papel creme — conteúdo do livro) ──
+    this.bookPageLeft = this.add.graphics();
+    this.bookPageLeft.fillStyle(0xf5ede0);
+    this.bookPageLeft.fillRect(cx - bW / 2 + 8, cy - bH / 2 + 8, bW / 2 - 16, bH - 16);
+    // Linhas pautadas
+    this.bookPageLeft.lineStyle(0.5, 0xc8b89a, 0.6);
+    for (let i = 0; i < 9; i++) {
+      this.bookPageLeft.lineBetween(
+        cx - bW / 2 + 20, cy - bH / 2 + 44 + i * 22,
+        cx - 14, cy - bH / 2 + 44 + i * 22
+      );
     }
 
-    this.nearPuzzleObj = puzzle;
+    // ── Página direita (papel creme — código ou em branco) ──
+    this.bookPageRight = this.add.graphics();
+    this.bookPageRight.fillStyle(0xf0e8d8);
+    this.bookPageRight.fillRect(cx + 8, cy - bH / 2 + 8, bW / 2 - 16, bH - 16);
+    // Linhas pautadas (mais fracas — fica em segundo plano)
+    this.bookPageRight.lineStyle(0.5, 0xc8b89a, 0.4);
+    for (let i = 0; i < 9; i++) {
+      this.bookPageRight.lineBetween(
+        cx + 14, cy - bH / 2 + 44 + i * 22,
+        cx + bW / 2 - 20, cy - bH / 2 + 44 + i * 22
+      );
+    }
+
+    // Título na página esquerda
+    this.bookTitle = this.add.text(cx - bW / 4, cy - bH / 2 + 20, '', {
+      fontSize: '12px', fontFamily: 'Georgia, serif',
+      color: '#3a1a08', align: 'center', fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    // Conteúdo na página esquerda
+    this.bookContent = this.add.text(cx - bW / 2 + 20, cy - bH / 2 + 48, '', {
+      fontSize: '10px', fontFamily: 'Georgia, serif',
+      color: '#2a1208', wordWrap: { width: bW / 2 - 36 },
+      lineSpacing: 6, align: 'left',
+    }).setOrigin(0, 0);
+
+    // Dígito grande na página direita — só livros com código
+    this.bookCodeText = this.add.text(cx + bW / 4, cy - 10, '', {
+      fontSize: '68px', fontFamily: 'Courier New', color: '#8b0000',
+    }).setOrigin(0.5);
+
+    this.bookCodeLabel = this.add.text(cx + bW / 4, cy + 50, '', {
+      fontSize: '9px', fontFamily: 'Courier New',
+      color: '#5a2020', letterSpacing: 2,
+    }).setOrigin(0.5);
+
+    const closePrompt = this.add.text(cx, cy + bH / 2 + 18, '[Enter] FECHAR', {
+      fontSize: '11px', fontFamily: 'Courier New', color: '#6a5030', letterSpacing: 3,
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: closePrompt,
+      alpha: { from: 0.35, to: 1 },
+      duration: 700, yoyo: true, repeat: -1,
+    });
+
+    this.bookUIContainer.add([
+      overlay, bookCover,
+      this.bookPageLeft, this.bookPageRight,
+      this.bookTitle, this.bookContent,
+      this.bookCodeText, this.bookCodeLabel,
+      closePrompt,
+    ]);
   }
 
-  showPuzzleUI(puzzle) {
-    // Overlay escuro
-    this.overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.75)
-      .setScrollFactor(0).setDepth(30);
+  openBook(bookData, isCode, codeIndex) {
+    this.bookUIOpen = true;
+    this.inputBlocked = true;
 
-    // Caixa do puzzle
-    this.add.rectangle(GAME_W / 2, GAME_H / 2, 400, 250, 0x0e0e1a)
-      .setScrollFactor(0).setDepth(31);
-    this.add.rectangle(GAME_W / 2, GAME_H / 2, 400, 250, 0x0, 0)
-      .setStrokeStyle(2, 0x4444aa).setScrollFactor(0).setDepth(32);
+    if (isCode && bookData) {
+      this.bookTitle.setText(bookData.title);
+      this.bookContent.setText(bookData.content);
+      this.bookCodeText.setText(bookData.code).setVisible(true);
+      this.bookCodeLabel.setText(`CÓDIGO ${codeIndex + 1} DE 5`).setVisible(true);
+    } else {
+      // Livro comum — página em branco
+      this.bookTitle.setText('...');
+      this.bookContent.setText('');
+      this.bookCodeText.setVisible(false);
+      this.bookCodeLabel.setVisible(false);
+    }
 
-    // Conteúdo
-    this.add.text(GAME_W / 2, GAME_H / 2 - 80, '-- ENIGMA --', {
-      fontSize: '14px',
-      fontFamily: 'Courier New',
-      color: '#8888cc',
-      letterSpacing: 4
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+    this.bookUIContainer.setVisible(true).setAlpha(0);
+    this.tweens.add({ targets: this.bookUIContainer, alpha: 1, duration: 320, ease: 'Sine.easeOut' });
+  }
 
-    this.add.text(GAME_W / 2, GAME_H / 2 - 40, puzzle.code, {
-      fontSize: '18px',
-      fontFamily: 'Courier New',
-      color: '#c0aae8',
-      letterSpacing: 2,
-      align: 'center'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+  closeBook() {
+    this.tweens.add({
+      targets: this.bookUIContainer, alpha: 0, duration: 220,
+      onComplete: () => {
+        this.bookUIContainer.setVisible(false);
+        this.bookUIOpen = false;
+        this.inputBlocked = false;
+      },
+    });
+  }
 
-    this.add.text(GAME_W / 2, GAME_H / 2, puzzle.hint, {
-      fontSize: '12px',
-      fontFamily: 'Courier New',
-      color: '#445566',
-      letterSpacing: 1
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+  // ── Partículas de poeira ──────────────────────────────────
+  createDustParticles() {
+    this.dustGfx = this.add.graphics().setDepth(7);
+    this.dustParts = [];
+    for (let i = 0; i < 40; i++) {
+      this.dustParts.push({
+        x: Phaser.Math.Between(this.MAZE_OFFSET_X, this.MAZE_OFFSET_X + this.MAZE_W),
+        y: Phaser.Math.Between(this.MAZE_OFFSET_Y, this.MAZE_OFFSET_Y + this.MAZE_H),
+        vx: (Math.random() - 0.5) * 0.18,
+        vy: -(Math.random() * 0.12 + 0.04),
+        a: Math.random() * 0.35 + 0.05,
+        r: Math.random() * 1.5 + 0.5,
+      });
+    }
+  }
 
-    this.add.text(GAME_W / 2 - 60, GAME_H / 2 + 40, 'RESPOSTA:', {
-      fontSize: '14px',
-      fontFamily: 'Courier New',
-      color: '#6666aa',
-      letterSpacing: 1
-    }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(32);
+  updateDust() {
+    const g = this.dustGfx;
+    g.clear();
+    this.dustParts.forEach(d => {
+      d.x += d.vx; d.y += d.vy;
+      d.a += (Math.random() - 0.5) * 0.008;
+      d.a = Phaser.Math.Clamp(d.a, 0.04, 0.45);
+      if (d.y < this.MAZE_OFFSET_Y) d.y = this.MAZE_OFFSET_Y + this.MAZE_H;
+      g.fillStyle(0xffd080, d.a);
+      g.fillCircle(d.x, d.y, d.r);
+    });
+  }
+  // ── Placeholder Figure (Parte 2) ─────────────────────────
 
-    this.answerText = '';
-    this.answerDisplay = this.add.text(GAME_W / 2 + 20, GAME_H / 2 + 40, '_', {
-      fontSize: '18px',
-      fontFamily: 'Courier New',
-      color: '#c0aae8',
-      letterSpacing: 3
-    }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(32);
 
-    this.feedbackText = this.add.text(GAME_W / 2, GAME_H / 2 + 80, '', {
-      fontSize: '12px',
-      fontFamily: 'Courier New',
-      color: '#ff5555',
-      letterSpacing: 2
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
 
-    this.add.text(GAME_W / 2, GAME_H / 2 + 108, 'ENTER confirmar  |  ESC cancelar', {
-      fontSize: '9px',
-      fontFamily: 'Courier New',
-      color: '#333355',
-      letterSpacing: 1
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(32);
+  // ─────────────────────────────────────────────────────────
+  //  MOVIMENTO GRID-BASED (sobrescreve handleMovement da BaseScene)
+  // ─────────────────────────────────────────────────────────
+  handleMovement() {
+    if (this.inputBlocked || this.transitioning) return;
 
-    // Input handler
-    this.puzzleKeyHandler = (e) => {
-      if (e.key === 'Escape') {
-        this.closePuzzleUI();
-        return;
+    let dx = 0, dy = 0;
+
+    if (this.cursors.left.isDown || this.keys.left.isDown) { dx = -1; this.facingDir = 'left'; }
+    if (this.cursors.right.isDown || this.keys.right.isDown) { dx = 1; this.facingDir = 'right'; }
+    if (this.cursors.up.isDown || this.keys.jump.isDown) { dy = -1; this.facingDir = 'up'; }
+    if (this.cursors.down.isDown || this.keys.down.isDown) { dy = 1; this.facingDir = 'down'; }
+
+    if (dx !== 0 || dy !== 0) this.moveQueue = { dx, dy };
+  }
+
+  updateMovement(delta) {
+    if (this.inputBlocked || this.transitioning) return;
+
+    const dt = delta / 1000;
+
+    if (this.moving) {
+      this.moveProgress += this.MOVE_SPEED * dt;
+
+      if (this.moveProgress >= 1) {
+        // Chegou no tile destino
+        this.moveProgress = 0;
+        this.playerTile.col += this.moveDir.dx;
+        this.playerTile.row += this.moveDir.dy;
+        const snap = this.tileToPixel(this.playerTile.col, this.playerTile.row);
+        this.playerPx.x = snap.x;
+        this.playerPx.y = snap.y;
+        this.moving = false;
+        this.checkTileEvents();
+
+        // Tenta enfileirar próxima direção
+        if (this.moveQueue) {
+          const { dx, dy } = this.moveQueue;
+          if (this.isWalkable(this.playerTile.col + dx, this.playerTile.row + dy)) {
+            this.moveDir = { dx, dy };
+            this.moving = true;
+          }
+          this.moveQueue = null;
+        }
+      } else {
+        const from = this.tileToPixel(this.playerTile.col, this.playerTile.row);
+        const to = this.tileToPixel(
+          this.playerTile.col + this.moveDir.dx,
+          this.playerTile.row + this.moveDir.dy
+        );
+        const t = Phaser.Math.Easing.Sine.InOut(this.moveProgress);
+        this.playerPx.x = Phaser.Math.Linear(from.x, to.x, t);
+        this.playerPx.y = Phaser.Math.Linear(from.y, to.y, t);
       }
-      if (e.key === 'Enter') {
-        this.checkAnswer();
-        return;
+    } else {
+      if (this.moveQueue) {
+        const { dx, dy } = this.moveQueue;
+        if (this.isWalkable(this.playerTile.col + dx, this.playerTile.row + dy)) {
+          this.moveDir = { dx, dy };
+          this.moveProgress = 0;
+          this.moving = true;
+        }
+        this.moveQueue = null;
       }
-      if (e.key === 'Backspace') {
-        this.answerText = this.answerText.slice(0, -1);
-      } else if (e.key.length === 1 && this.answerText.length < 6) {
-        this.answerText += e.key;
+    }
+
+    // Sincroniza o corpo de física com a posição calculada
+    this.player.setPosition(this.playerPx.x, this.playerPx.y);
+  }
+
+  // ── Eventos ao chegar num tile ────────────────────────────
+  checkTileEvents() {
+    const { col, row } = this.playerTile;
+
+    // Livro?
+    this.bookObjects.forEach(b => {
+      if (!b.collected && b.col === col && b.row === row) {
+        this.collectBook(b);
       }
-      this.answerDisplay.setText(this.answerText || '_');
+    });
+
+    // Porta?
+    if (col === this.doorTile.col && row === this.doorTile.row) {
+      this.tryEnterDoor();
+    }
+  }
+
+  collectBook(book) {
+    book.collected = true;
+    // Som de pegar chave reaproveitado
+    // som: coleta de livro — substitua pelo áudio correto
+
+    this.tweens.add({
+      targets: book.gfx, y: book.gfx.y - 22, alpha: 0,
+      duration: 380, onComplete: () => book.gfx.destroy(),
+    });
+
+    if (book.isCode) {
+      const idx = this.codesFound.length;
+      this.codesFound.push(book.data.code);
+      this.fillCodeSlot(idx, book.data.code);
+    }
+
+    const codeIdx = book.isCode ? this.codesFound.length - 1 : -1;
+    this.openBook(book.data, book.isCode, codeIdx);
+
+    // Fecha automaticamente em 4 segundos se o player não fechar
+    this.time.delayedCall(4000, () => { if (this.bookUIOpen) this.closeBook(); });
+  }
+
+  tryEnterDoor() {
+    if (this.codesFound.length < 5) {
+      this.showLockedMessage(); // reutiliza o método da BaseScene
+      return;
+    }
+    // Toca som e transita
+    // som: porta abrindo — substitua pelo áudio correto
+    this.transitionTo(this.doorDestination);
+  }
+
+  // ── drawPlayer: sobrescreve o da BaseScene ────────────────
+  // O BaseScene usa this.player.x / this.player.y, que aqui é
+  // sincronizado com playerPx — então o drawPlayer original funciona,
+  // mas vamos enriquecer com a lanterna e animação de passo
+  drawPlayer() {
+    const g = this.playerGfx;
+    g.clear();
+
+    const x = this.playerPx.x;
+    const y = this.playerPx.y;
+
+    this.stepCount += this.moving ? 1 : 0;
+    const bob = this.moving ? Math.sin(this.stepCount * 0.28) * 2 : 0;
+
+    // Sombra
+    this.playerShadow.clear();
+    this.playerShadow.fillStyle(0x000000, 0.22);
+    this.playerShadow.fillEllipse(x, y + 20, 20, 6);
+
+    // Pernas
+    const leg = this.moving ? Math.sin(this.stepCount * 0.38) * 4 : 0;
+    g.fillStyle(COLORS.player, 0.8);
+    g.fillRect(x - 8, y + 4 + bob, 6, 14 + leg);
+    g.fillRect(x + 2, y + 4 + bob, 6, 14 - leg);
+
+    // Corpo
+    g.fillStyle(COLORS.player);
+    g.fillRect(x - 10, y - 14 + bob, 20, 20);
+
+    // Cabeça
+    g.fillRect(x - 8, y - 28 + bob, 16, 14);
+
+    // Olho
+    g.fillStyle(COLORS.playerEye);
+    const eyeX = (this.facingDir === 'left') ? x - 6 : x + 2;
+    if (this.facingDir !== 'up' && this.facingDir !== 'down') {
+      g.fillRect(eyeX, y - 25 + bob, 3, 3);
+    }
+
+    // Braços
+    g.fillStyle(COLORS.player, 0.75);
+    g.fillRect(x - 14, y - 12 + bob, 5, 14);
+    g.fillRect(x + 9, y - 12 + bob, 5, 14);
+
+
+  }
+
+  // ─────────────────────────────────────────────────────────
+  update(time, delta) {
+    if (this.transitioning) return;
+
+    // NÃO chama super.update() para não sobrescrever o movimento grid-based
+    this.handleMovement();
+    this.updateMovement(delta);
+    this.drawPlayer();
+    this.updateDust();
+    this.updateFigure(time, delta); // Parte 2
+
+    // Prompt de interação com a porta
+    const nearDoor = this.playerTile.col === this.doorTile.col &&
+      this.playerTile.row === this.doorTile.row;
+    if (nearDoor && !this.activePrompt) {
+      const label = this.codesFound.length >= 5 ? TEXTS.ENTER : '🔒 Trancada';
+      const color = this.codesFound.length >= 5 ? '#ffdd44' : '#ff6666';
+      this.createPrompt(label, -60, color);
+    } else if (!nearDoor && this.activePrompt) {
+      this.activePrompt.destroy();
+      this.activePrompt = null;
+    }
+  }
+
+  createFigure() {
+    // Estado do Figure
+    this.figure = {
+      col: 15, row: 1,             // tile inicial (longe do spawn)
+      px: { x: 0, y: 0 },         // posição em pixels
+      state: 'patrol',             // 'patrol' | 'chase' | 'search' | 'stunned'
+      patrolIndex: 0,              // índice do waypoint atual
+      targetTile: null,            // tile destino atual
+      path: [],                    // caminho calculado pelo BFS
+      pathIndex: 0,                // posição no caminho atual
+      moving: false,
+      moveDir: { dx: 0, dy: 0 },
+      moveProgress: 0,
+      facingDir: 'right',
+      searchTimer: 0,              // tempo restante no estado 'search'
+      searchTarget: null,          // última posição ouvida do player
+      stunTimer: 0,                // tempo de stun após jumpscare
+      alertCooldown: 0,            // cooldown para não ouvir novamente
+      noiseLevel: 0,               // nível de ruído percebido
+      stepFrame: 0,                // animação de passo
     };
 
-    window.addEventListener('keydown', this.puzzleKeyHandler);
+    const start = this.tileToPixel(this.figure.col, this.figure.row);
+    this.figure.px = { ...start };
 
-    if (this.interactHint) {
-      this.interactHint.destroy();
-      this.interactHint = null;
+    // ── Animações da spritesheet ──────────────────────────────
+    // Linha 0 (frames 0-3): caminhada normal
+    if (!this.anims.exists('figure_walk')) {
+      this.anims.create({
+        key: 'figure_walk',
+        frames: this.anims.generateFrameNumbers('figure', { start: 0, end: 3 }),
+        frameRate: 6,
+        repeat: -1,
+      });
     }
+    // Linha 1 (frames 4-7): alerta / ataque
+    if (!this.anims.exists('figure_alert')) {
+      this.anims.create({
+        key: 'figure_alert',
+        frames: this.anims.generateFrameNumbers('figure', { start: 4, end: 7 }),
+        frameRate: 8,
+        repeat: -1,
+      });
+    }
+    // Linha 2 (frames 8-11): rastejar (chase rápido)
+    if (!this.anims.exists('figure_chase')) {
+      this.anims.create({
+        key: 'figure_chase',
+        frames: this.anims.generateFrameNumbers('figure', { start: 8, end: 11 }),
+        frameRate: 10,
+        repeat: -1,
+      });
+    }
+
+    // Sprite do Figure (escalado para caber no tile)
+    const scaleX = (this.TILE * 1.4) / 220;
+    const scaleY = (this.TILE * 2.2) / 405;
+    this.figureSprite = this.add.sprite(start.x, start.y, 'figure')
+      .setDepth(9)
+      .setScale(scaleX, scaleY)
+      .setOrigin(0.5, 0.85); // ancora na base do sprite
+    this.figureSprite.play('figure_walk');
+
+    // figureGfx ainda usado para a aura e olhos de chase
+    this.figureGfx = this.add.graphics().setDepth(9);
+
+    // Overlay de morte (transparente por padrão)
+    this.deathOverlay = this.add.rectangle(
+      GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0
+    ).setScrollFactor(0).setDepth(60).setVisible(false);
+
+    // Tecla R para reiniciar após morte
+    this.rKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+
+    // Batimento cardíaco (volume controlado por proximidade)
+    this.heartbeatPlaying = false;
+    this.heartbeatInterval = null;
+    this.lastHeartbeatDist = 999;
+
+    // Inicializa o primeiro destino de patrulha
+    this._figureNextPatrolTarget();
   }
 
-  checkAnswer() {
-    if (this.answerText.trim() === this.activePuzzle.answer) {
-      // Correto
-      this.feedbackText.setColor('#00ff88').setText('✓ CORRETO!');
-      window.removeEventListener('keydown', this.puzzleKeyHandler);
+  // ── BFS — encontra caminho entre dois tiles ───────────────────
+  _bfsPath(fromCol, fromRow, toCol, toRow) {
+    // BFS simples no grid do labirinto
+    const visited = new Set();
+    const queue = [{ col: fromCol, row: fromRow, path: [] }];
+    const key = (c, r) => `${c},${r}`;
 
-      this.activePuzzle.solved = true;
-      this.solvedCount++;
+    visited.add(key(fromCol, fromRow));
 
-      this.time.delayedCall(1000, () => {
-        this.closePuzzleUI();
-        this.checkWin();
-      });
-    } else {
-      // Errado
-      this.feedbackText.setText('✗ ERRADO. Tente novamente.');
-      this.answerText = '';
-      this.answerDisplay.setText('_');
+    const dirs = [
+      { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
+      { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+    ];
 
-      if (GameState.damage(1)) {
-        window.removeEventListener('keydown', this.puzzleKeyHandler);
-        this.closePuzzleUI();
-        this.time.delayedCall(500, () => this.transitionTo('GameOverScene'));
+    while (queue.length > 0) {
+      const { col, row, path } = queue.shift();
+
+      if (col === toCol && row === toRow) return path;
+
+      for (const d of dirs) {
+        const nc = col + d.dx;
+        const nr = row + d.dy;
+        const k = key(nc, nr);
+        if (!visited.has(k) && this.isWalkable(nc, nr)) {
+          visited.add(k);
+          queue.push({ col: nc, row: nr, path: [...path, { col: nc, row: nr, dx: d.dx, dy: d.dy }] });
+        }
       }
+
+      // Limite de busca para não travar o frame
+      if (queue.length > 800) break;
     }
+
+    return []; // sem caminho
   }
 
-  closePuzzleUI() {
-    window.removeEventListener('keydown', this.puzzleKeyHandler);
-    this.children.list.filter(c => c.depth >= 30).forEach(c => c.destroy());
-    this.activePuzzle = null;
+  // ── Define próximo waypoint de patrulha ──────────────────────
+  _figureNextPatrolTarget() {
+    const fig = this.figure;
+    fig.patrolIndex = (fig.patrolIndex + 1) % this.FIGURE_PATROL_PATH.length;
+    const wp = this.FIGURE_PATROL_PATH[fig.patrolIndex];
+    fig.path = this._bfsPath(fig.col, fig.row, wp.col, wp.row);
+    fig.pathIndex = 0;
   }
 
-  checkWin() {
-    if (this.solvedCount < this.totalPuzzles) {
-      const remaining = this.totalPuzzles - this.solvedCount;
-      const msg = this.add.text(GAME_W / 2, GAME_H / 2 - 20, `${remaining} enigma(s) restante(s)...`, {
-        fontSize: '14px',
-        fontFamily: 'Courier New',
-        color: '#6666aa',
-        letterSpacing: 2,
-        backgroundColor: '#000000',
-        padding: { x: 10, y: 5 }
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(10);
+  // ── Distância em tiles entre Figure e player ─────────────────
+  _figureDist() {
+    return Math.abs(this.figure.col - this.playerTile.col) +
+      Math.abs(this.figure.row - this.playerTile.row);
+  }
 
-      this.tweens.add({
-        targets: msg,
-        alpha: 0,
-        duration: 800,
-        delay: 1500,
-        onComplete: () => msg.destroy()
-      });
+  // ── Nível de ruído que o player está fazendo ─────────────────
+  _playerNoiseLevel() {
+    if (this.inputBlocked || !this.moving) return this.SOUND_IDLE_LEVEL;
+    return this.SOUND_MOVE_LEVEL;
+  }
+
+  // ── Verifica se o Figure ouve o player ───────────────────────
+  _figureHears() {
+    if (this.figure.alertCooldown > 0) return false;
+    const dist = this._figureDist();
+    const noise = this._playerNoiseLevel();
+    // Ruído se propaga — quanto mais perto, mais fácil de ouvir
+    const hearThreshold = this.FIGURE_HEAR_RADIUS * noise;
+    return dist <= hearThreshold;
+  }
+
+  // ── Atualiza o batimento cardíaco ─────────────────────────────
+  _updateHeartbeat() {
+    const dist = this._figureDist();
+
+    // Fora do alcance — para o batimento
+    if (dist > this.HEARTBEAT_MIN_DIST) {
+      if (this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+        this.heartbeatPlaying = false;
+      }
       return;
     }
 
-    // Todos resolvidos - vitória!
-    this.transitioning = true;
+    // Calcula intervalo com base na distância (mais perto = mais rápido)
+    const t = 1 - Phaser.Math.Clamp((dist - this.HEARTBEAT_MAX_DIST) / (this.HEARTBEAT_MIN_DIST - this.HEARTBEAT_MAX_DIST), 0, 1);
+    const interval = Phaser.Math.Linear(1800, 350, t); // ms entre batidas
 
-    const unlock = this.add.text(GAME_W / 2, GAME_H / 2, '✓ PORTA DESTRANCADA!', {
-      fontSize: '20px',
-      fontFamily: 'Courier New',
-      color: '#ffdd44',
-      letterSpacing: 3,
-      backgroundColor: '#000000',
-      padding: { x: 15, y: 8 }
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
+    // Recria o interval apenas se a distância mudou significativamente
+    if (Math.abs(dist - this.lastHeartbeatDist) > 1 || !this.heartbeatPlaying) {
+      if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+
+      this.heartbeatPlaying = true;
+      this.lastHeartbeatDist = dist;
+
+      const playBeat = () => {
+        if (!this.sound || this.transitioning) return;
+        // Usa o som de porta como "batida" com pitch baixo — adapte se tiver som próprio
+        try {
+          const vol = Phaser.Math.Linear(0.05, 0.45, t);
+          // som: batimento cardíaco — substitua pelo áudio correto
+        } catch (e) { }
+      };
+
+      playBeat();
+      this.heartbeatInterval = setInterval(() => {
+        if (!this.scene.isActive('FinalScene')) {
+          clearInterval(this.heartbeatInterval);
+          return;
+        }
+        playBeat();
+      }, interval);
+    }
+  }
+
+  // ── Mata o player ─────────────────────────────────────────────
+  _figureKillPlayer() {
+    if (this.playerDead || this.transitioning) return;
+    this.playerDead = true;
+    this.inputBlocked = true;
+
+    // Para batimento
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+
+    // Jumpscare — som + flash vermelho
+    // som: jumpscare/grito do Figure — substitua pelo áudio correto
+
+    const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff0000, 0)
+      .setScrollFactor(0).setDepth(58);
 
     this.tweens.add({
-      targets: unlock,
-      alpha: { from: 1, to: 0.3 },
-      duration: 400,
-      yoyo: true,
-      repeat: 3,
+      targets: flash, alpha: 0.55, duration: 80,
+      yoyo: true, repeat: 2,
       onComplete: () => {
-        unlock.destroy();
-        this.transitionTo('WinScene');
-      }
+        flash.destroy();
+        this._showDeathScreen();
+      },
+    });
+
+    // Câmera treme
+    this.cameras.main.shake(400, 0.025);
+  }
+
+  _showDeathScreen() {
+    // Reduz vida pelo sistema do GameState
+    const isDead = GameState.damage(4);
+
+    this.deathOverlay.setVisible(true);
+    this.tweens.add({ targets: this.deathOverlay, alpha: 0.82, duration: 600 });
+
+    this.time.delayedCall(2000, () => {
+      GameState.reset();
+      this.transitionTo('GameOverScene');
     });
   }
 
-  handleInteract() {
-    if (this.transitioning || this.activePuzzle) return;
+  // ── Desenha o Figure (spritesheet) ───────────────────────────
+  _drawFigure() {
+    const g = this.figureGfx;
+    const fig = this.figure;
+    const x = fig.px.x;
+    const y = fig.px.y;
 
-    if (this.nearPuzzleObj && !this.nearPuzzleObj.solved) {
-      this.activePuzzle = this.nearPuzzleObj;
-      this.showPuzzleUI(this.nearPuzzleObj);
+    // Posiciona e espelha o sprite conforme a direção
+    this.figureSprite.setPosition(x, y);
+    this.figureSprite.setFlipX(fig.facingDir === 'left');
+
+    // Troca animação conforme estado
+    const targetAnim = fig.state === 'chase' ? 'figure_chase'
+      : fig.state === 'search' ? 'figure_alert'
+        : 'figure_walk';
+    if (this.figureSprite.anims.currentAnim?.key !== targetAnim) {
+      this.figureSprite.play(targetAnim);
+    }
+
+    // Aura de escuridão (graphics simples por cima)
+    g.clear();
+    const auraAlpha = fig.state === 'chase' ? 0.22 : 0.10;
+    g.fillStyle(0x000000, auraAlpha);
+    g.fillCircle(x, y - this.TILE * 0.5, this.TILE * 1.8);
+  }
+
+  // ── Lógica principal do Figure ────────────────────────────────
+  updateFigure(time, delta) {
+    if (this.playerDead || this.transitioning) return;
+
+    const fig = this.figure;
+    const dt = delta / 1000;
+
+    // Cooldowns
+    if (fig.alertCooldown > 0) fig.alertCooldown -= dt;
+    if (fig.stunTimer > 0) {
+      fig.stunTimer -= dt;
+      if (fig.stunTimer <= 0) fig.state = 'patrol';
+      this._drawFigure();
+      return;
+    }
+
+    // ── Máquina de estados ────────────────────────────────────
+    switch (fig.state) {
+
+      case 'patrol':
+        // Patrulha segue o caminho definido
+        if (this._figureHears()) {
+          fig.state = 'chase';
+          fig.searchTarget = { ...this.playerTile };
+          fig.path = this._bfsPath(fig.col, fig.row, this.playerTile.col, this.playerTile.row);
+          fig.pathIndex = 0;
+          // som: Figure detectou o player — substitua pelo áudio correto
+          break;
+        }
+        this._figureMoveAlongPath(this.FIGURE_PATROL_SPEED, dt);
+        if (!fig.moving && fig.pathIndex >= fig.path.length) {
+          this._figureNextPatrolTarget();
+        }
+        break;
+
+      case 'chase':
+        // Recalcula caminho a cada tile chegado
+        if (!fig.moving) {
+          fig.path = this._bfsPath(fig.col, fig.row, this.playerTile.col, this.playerTile.row);
+          fig.pathIndex = 0;
+        }
+        this._figureMoveAlongPath(this.FIGURE_CHASE_SPEED, dt);
+
+        // Verifica se alcançou o player
+        if (this._figureDist() <= this.FIGURE_KILL_RADIUS) {
+          this._figureKillPlayer();
+          return;
+        }
+
+        // Perdeu de ouvir — vai para o último lugar ouvido
+        if (!this._figureHears()) {
+          fig.alertCooldown = 2.5; // 2.5s antes de ouvir novamente
+          fig.state = 'search';
+          fig.searchTimer = 4.0;
+          fig.path = this._bfsPath(fig.col, fig.row,
+            fig.searchTarget.col, fig.searchTarget.row);
+          fig.pathIndex = 0;
+        }
+        break;
+
+      case 'search':
+        // Vai até a última posição conhecida do player
+        fig.searchTimer -= dt;
+        this._figureMoveAlongPath(this.FIGURE_PATROL_SPEED * 1.3, dt);
+
+        if (this._figureHears()) {
+          fig.state = 'chase';
+          fig.searchTarget = { ...this.playerTile };
+          fig.path = this._bfsPath(fig.col, fig.row, this.playerTile.col, this.playerTile.row);
+          fig.pathIndex = 0;
+          break;
+        }
+
+        // Esgotou a busca — volta a patrulhar
+        if (fig.searchTimer <= 0 || (!fig.moving && fig.pathIndex >= fig.path.length)) {
+          fig.state = 'patrol';
+          this._figureNextPatrolTarget();
+        }
+        break;
+    }
+
+    this._updateHeartbeat();
+    this._drawFigure();
+
+    // Escurece a tela levemente quando o Figure está em chase
+    this._updateChaseVignette();
+  }
+
+  // ── Move o Figure um passo ao longo do caminho BFS ───────────
+  _figureMoveAlongPath(speed, dt) {
+    const fig = this.figure;
+
+    if (fig.moving) {
+      fig.moveProgress += speed * dt;
+
+      if (fig.moveProgress >= 1) {
+        fig.moveProgress = 0;
+        fig.col += fig.moveDir.dx;
+        fig.row += fig.moveDir.dy;
+        const snap = this.tileToPixel(fig.col, fig.row);
+        fig.px = { ...snap };
+        fig.moving = false;
+      } else {
+        const from = this.tileToPixel(fig.col, fig.row);
+        const to = this.tileToPixel(fig.col + fig.moveDir.dx, fig.row + fig.moveDir.dy);
+        const t = Phaser.Math.Easing.Sine.InOut(fig.moveProgress);
+        fig.px.x = Phaser.Math.Linear(from.x, to.x, t);
+        fig.px.y = Phaser.Math.Linear(from.y, to.y, t);
+      }
+    } else {
+      // Pega próximo passo do caminho
+      if (fig.pathIndex < fig.path.length) {
+        const next = fig.path[fig.pathIndex];
+        fig.pathIndex++;
+        fig.moveDir = { dx: next.dx, dy: next.dy };
+        fig.moveProgress = 0;
+        fig.moving = true;
+
+        // Atualiza direção visual
+        if (next.dx > 0) fig.facingDir = 'right';
+        if (next.dx < 0) fig.facingDir = 'left';
+        if (next.dy > 0) fig.facingDir = 'down';
+        if (next.dy < 0) fig.facingDir = 'up';
+      }
     }
   }
 
-  update() {
-    if (this.transitioning) return;
-    if (this.activePuzzle) return;
-
-    this.handleMovement();
-    this.drawPlayer();
-
-    // Atualiza dica de interação
-    if (this.nearPuzzleObj && !this.interactHint) {
-      this.interactHint = this.add.text(GAME_W / 2, GAME_H - 90, '[E] Examinar', {
-        fontSize: '14px',
-        fontFamily: 'Courier New',
-        color: '#6666aa',
-        letterSpacing: 2,
-        backgroundColor: '#000000',
-        padding: { x: 8, y: 4 }
-      }).setOrigin(0.5).setDepth(20).setScrollFactor(0);
-    } else if (!this.nearPuzzleObj && this.interactHint) {
-      this.interactHint.destroy();
-      this.interactHint = null;
+  // ── Vinheta vermelha no chase ─────────────────────────────────
+  _updateChaseVignette() {
+    if (!this._chaseVignette) {
+      this._chaseVignette = this.add.graphics()
+        .setScrollFactor(0).setDepth(44);
     }
 
-    this.nearPuzzleObj = null;
+    const fig = this.figure;
+    const g = this._chaseVignette;
+    g.clear();
+
+    if (fig.state !== 'chase') return;
+
+    const pulse = (Math.sin(Date.now() * 0.006) + 1) / 2;
+    const alpha = 0.04 + pulse * 0.08;
+
+    g.fillStyle(0xff0000, alpha);
+    g.fillRect(0, 0, GAME_W, 18);
+    g.fillRect(0, GAME_H - 18, GAME_W, 18);
+    g.fillRect(0, 0, 18, GAME_H);
+    g.fillRect(GAME_W - 18, 0, 18, GAME_H);
   }
+
 }
 
 // =============================================
@@ -4309,7 +5620,7 @@ const config = {
     default: 'arcade',
     arcade: {
       gravity: { y: 0 },
-      debug: false
+      debug: true
     }
   },
   scene: [
@@ -4322,7 +5633,12 @@ const config = {
     FinalScene,
     GameOverScene,
     WinScene
-  ]
+  ],
+
+  scale: {
+    mode: Phaser.Scale.ENVELOP,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+  }
 };
 
 // Inicializa o jogo quando a página carregar
