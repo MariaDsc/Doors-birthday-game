@@ -42,7 +42,6 @@ const TEXTS = {
   PHASE_2: 'FASE 2 - OI, BELLS...',
   PHASE_3: 'FASE 3 - SALA DO SALMÃO',
   PHASE_4: 'FASE 4 - ACADEMIA',
-  PHASE_5: 'FASE 5 - A ARENA',
   PHASE_FINAL: 'FASE FINAL - BIBLIOTECA'
 };
 
@@ -51,9 +50,19 @@ const GameState = {
   health: 4,
   door: 1,
 
-  damage(amount = 1) {
+  damage(amount = 1, scene = null) {
+    const perdidos = this.health - Math.max(0, this.health - amount);
     this.health = Math.max(0, this.health - amount);
     this.updateUI();
+
+    if (scene) {
+      for (let i = 0; i < perdidos; i++) {
+        scene.time.delayedCall(i * 180, () => {
+          scene.sound.play('damage_sound', { volume: 1.0 });
+        });
+      }
+    }
+
     return this.health <= 0;
   },
 
@@ -207,7 +216,10 @@ class BaseScene extends Phaser.Scene {
 
   createPrompt(text, yOffset = -70, color = '#ddbbff') {
     if (this.activePrompt) this.activePrompt.destroy();
-    this.activePrompt = this.add.text(this.player.x, this.player.y + yOffset, text, {
+    const cam = this.cameras.main;
+    const sx = (this.player.x - cam.scrollX) * cam.zoom;
+    const sy = (this.player.y - cam.scrollY) * cam.zoom + yOffset;
+    this.activePrompt = this.add.text(sx, sy, text, {
       fontSize: '14px',
       fontFamily: 'Courier New',
       color: color,
@@ -253,8 +265,9 @@ class BaseScene extends Phaser.Scene {
     this.drawPlayer();
 
     if (this.activePrompt) {
-      this.activePrompt.x = this.player.x;
-      this.activePrompt.y = this.player.y - 70;
+      const cam = this.cameras.main;
+      this.activePrompt.x = (this.player.x - cam.scrollX) * cam.zoom;
+      this.activePrompt.y = (this.player.y - cam.scrollY) * cam.zoom - 70;
     }
   }
 
@@ -423,14 +436,25 @@ class BaseScene extends Phaser.Scene {
   }
   preload() {
     // Músicas
-    this.load.audio('musica_fase1', ['assets/audio/fase1.ogg', 'assets/audio/fase1.mp3']);
+    this.load.audio('musica_fase1', ['assets/audio/fase1.ogg', 'assets/audio/fase1.ogg']);
     this.load.audio('musica_fase2', ['assets/audio/fase2.mp3', 'assets/audio/fase2.mp3']);
+    this.load.audio('musica_fase3', ['assets/audio/fase3.mp3', 'assets/audio/fase3.mp3']);
+    this.load.audio('music_final', ['assets/audio/library.mp3', 'assets/audio/library.mp3']);
+    this.load.audio('musica_win', ['assets/audio/win.mp3', 'assets/audio/win.mp3']);
+    this.load.audio('musica_gameover', ['assets/audio/game_over.mp3', 'assets/audio/game_over.mp3']);
 
+    //efeitos sonoros
     this.load.audio('som_chave', 'assets/audio/key.ogg');
     this.load.audio('som_porta', 'assets/audio/door.ogg');
     this.load.audio('som_gaveta', 'assets/audio/drawer.mp3');
     this.load.audio('psst', 'assets/audio/psst.mp3');
     this.load.audio('screech_jumpscare', 'assets/audio/screech jumpscare.mp3');
+    this.load.audio('figure_grunt_far', 'assets/audio/grunt_far.mp3');
+    this.load.audio('figure_grunt_medium', 'assets/audio/grunt_medium.mp3');
+    this.load.audio('figure_grunt_close', 'assets/audio/grunt_near.mp3');
+    this.load.audio('figure_stomps', 'assets/audio/stomps.mp3');
+    this.load.audio('figure_jumpscare', 'assets/audio/figure_jumpscare.mp3');
+    this.load.audio('damage_sound', ['assets/audio/damage.mp3', 'assets/audio/damage.mp3']);
   }
 }
 // =============================================
@@ -497,7 +521,7 @@ class BootScene extends Phaser.Scene {
 
     this.input.keyboard.once('keydown', () => {
       this.cameras.main.fadeOut(600, 0, 0, 0);
-      this.time.delayedCall(620, () => this.scene.start('Phase5Scene'));
+      this.time.delayedCall(620, () => this.scene.start('Phase1Scene'));
     });
   }
 
@@ -745,7 +769,7 @@ class Phase2Scene extends BaseScene {
     this.jeremiah = null;
     this.jeremiahGfx = null;
     this.jeremiahDir = 1;
-    this.jeremiahSpeed = 90 * this.s;
+    this.jeremiahSpeed = 120 * this.s;
     this.jeremiahLooking = false;
     this.hitCooldown = false;
     this.inWardrobe = false;
@@ -2260,13 +2284,16 @@ class Phase2Scene extends BaseScene {
   }
 
   createJeremiah() {
+    this.lightFlickering = false;
+
     this.jeremiah = this.physics.add.sprite(1800, this.floorY - 60)
       .setVisible(false)
       .setCollideWorldBounds(true);
     this.jeremiah.body.setSize(30 * this.s, 60 * this.s);
     this.jeremiah.body.setGravityY(400 * this.s);
     this.jeremiahGfx = this.add.graphics().setDepth(6);
-    this.hibells = this.add.text(0, 0, '"Oi, Bells..."', {
+
+    this.hibells = this.add.text(0, 0, '"Hi, Bells..."', {
       fontSize: `${13 * this.s}px`,
       fontFamily: 'Courier New',
       color: '#aaffaa',
@@ -2283,29 +2310,87 @@ class Phase2Scene extends BaseScene {
     const wallStartX = (this.currentWall - 1) * 1400;
     const wallEndX = wallStartX + 1400;
     if (x < wallStartX || x > wallEndX) return;
-    const color = this.jeremiahLooking ? 0x88ff88 : 0x447744;
-    g.fillStyle(color, this.jeremiahLooking ? 0.9 : 0.7);
-    g.fillRect(x - 12 * s, y - 58 * s, 24 * s, 35 * s);
-    g.fillStyle(color, this.jeremiahLooking ? 1 : 0.8);
-    g.fillRect(x - 10 * s, y - 82 * s, 20 * s, 22 * s);
-    g.fillStyle(0xeeffee);
-    g.fillCircle(x - 4 * s, y - 72 * s, (this.jeremiahLooking ? 5 : 3) * s);
-    g.fillCircle(x + 4 * s, y - 72 * s, (this.jeremiahLooking ? 5 : 3) * s);
-    g.fillStyle(0x00aa00);
-    g.fillCircle(x - 4 * s, y - 72 * s, (this.jeremiahLooking ? 2 : 1) * s);
-    g.fillCircle(x + 4 * s, y - 72 * s, (this.jeremiahLooking ? 2 : 1) * s);
-    g.fillStyle(color, 0.7);
-    g.fillRect(x - 10 * s, y - 22 * s, 9 * s, 22 * s);
-    g.fillRect(x + 1 * s, y - 22 * s, 9 * s, 22 * s);
-    g.fillRect(x - 18 * s, y - 56 * s, 6 * s, 28 * s);
-    g.fillRect(x + 12 * s, y - 56 * s, 6 * s, 28 * s);
+
+    const skinColor = 0xc8956c;
+    const hairColor = 0xf5c542;
+    const shirtColor = 0xffffff;
+    const shortsColor = 0xcc2222;
+    const shoeColor = 0xeeeeee;
+    const eyeColor = 0x44ccff;
+
+    // --- CABELO ---
+    g.fillStyle(hairColor, 1);
+    g.fillRect(x - 11 * s, y - 105 * s, 22 * s, 10 * s); // topo
+    g.fillRect(x - 15 * s, y - 98 * s, 7 * s, 8 * s);    // lateral esq
+    g.fillRect(x + 8 * s, y - 98 * s, 7 * s, 8 * s);    // lateral dir
+
+    // --- CABEÇA ---
+    g.fillStyle(skinColor, 1);
+    g.fillRect(x - 11 * s, y - 97 * s, 22 * s, 28 * s);
+
+    // --- OLHOS ---
+    g.fillStyle(eyeColor, 1);
+    g.fillRect(x - 8 * s, y - 86 * s, 5 * s, 5 * s);
+    g.fillRect(x + 3 * s, y - 86 * s, 5 * s, 5 * s);
+
+    // --- PESCOÇO ---
+    g.fillStyle(skinColor, 1);
+    g.fillRect(x - 5 * s, y - 69 * s, 10 * s, 8 * s);
+
+    // --- CAMISETA (torso) ---
+    g.fillStyle(shirtColor, 1);
+    g.fillRect(x - 14 * s, y - 61 * s, 28 * s, 32 * s);
+
+    // --- BRAÇOS ---
+    g.fillStyle(skinColor, 1);
+    g.fillRect(x - 22 * s, y - 60 * s, 8 * s, 30 * s); // esquerdo
+    g.fillRect(x + 14 * s, y - 60 * s, 8 * s, 30 * s); // direito
+
+    // --- SHORTS ---
+    g.fillStyle(shortsColor, 1);
+    g.fillRect(x - 14 * s, y - 29 * s, 28 * s, 20 * s);
+
+    // --- PERNAS ---
+    g.fillStyle(skinColor, 1);
+    g.fillRect(x - 13 * s, y - 9 * s, 11 * s, 28 * s); // esquerda
+    g.fillRect(x + 2 * s, y - 9 * s, 11 * s, 28 * s); // direita
+
+    // --- TÊNIS ---
+    g.fillStyle(shoeColor, 1);
+    g.fillRect(x - 14 * s, y + 19 * s, 13 * s, 6 * s); // esquerdo
+    g.fillRect(x + 1 * s, y + 19 * s, 13 * s, 6 * s); // direito
+
+    // --- AURA (quando olhando) ---
     if (this.jeremiahLooking) {
-      g.fillStyle(0x00ff00, 0.08);
-      g.fillCircle(x, y - 50 * s, 50 * s);
+      g.fillStyle(0x00ff00, 0.06);
+      g.fillCircle(x, y - 50 * s, 65 * s);
     }
   }
 
   checkJeremiah() {
+    // ── Piscar das luzes por proximidade ─────────────────
+    const distJer = Phaser.Math.Distance.Between(
+      this.player.x, this.player.y,
+      this.jeremiah.x, this.jeremiah.y
+    );
+
+    if (distJer < 1500 && !this.lightFlickering) {
+      this.lightFlickering = true;
+
+      let flashes = 0;
+      this.time.addEvent({
+        delay: 5000,
+        repeat: 2,
+        callback: () => {
+          const on = flashes % 2 === 0;
+          const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xfffde0, on ? 0.18 : 0)
+            .setScrollFactor(0).setDepth(20);
+          this.time.delayedCall(160, () => flash.destroy());
+          flashes++;
+        }
+      });
+    }
+
     if (this.inWardrobe) { this.jeremiahLooking = false; return; }
     const wallStartX = (this.currentWall - 1) * 1400;
     const wallEndX = wallStartX + 1400;
@@ -2322,7 +2407,7 @@ class Phase2Scene extends BaseScene {
       this.hibells.setPosition(this.jeremiah.x, this.jeremiah.y - 110 * this.s).setAlpha(1);
       this.tweens.killTweensOf(this.hibells);
       this.tweens.add({ targets: this.hibells, alpha: 0, duration: 1000, delay: 1000 });
-      if (GameState.damage(2)) { this.transitionTo('GameOverScene'); return; }
+      if (GameState.damage(2, this)) { this.transitionTo('GameOverScene'); return; }
       const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x00ff00, 0.25)
         .setScrollFactor(0).setDepth(25);
       this.tweens.add({ targets: flash, alpha: 0, duration: 700, onComplete: () => flash.destroy() });
@@ -2513,11 +2598,11 @@ class Phase2Scene extends BaseScene {
     const nearDoor = this.isNear(this.doorZone);
 
     if (nearWardrobe && !this.activePrompt) {
-      this.createPrompt(this.inWardrobe ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70 * this.s, '#44bbff');
+      this.createPrompt(this.inWardrobe ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70 * this.s, '#44ff44');
     } else if (nearDrawer && !this.activePrompt) {
       this.createPrompt('[E] Vasculhar', -70 * this.s, '#ffdd88');
     } else if (nearDoor && !this.activePrompt) {
-      this.createPrompt(this.keyFound ? TEXTS.ENTER : '🔒 Trancada', -70 * this.s, this.keyFound ? '#ffdd44' : '#ff6666');
+      this.createPrompt(this.keyFound ? TEXTS.ENTER : 'Trancada', -70 * this.s, this.keyFound ? '#ffdd44' : '#ff6666');
     } else if (!nearWardrobe && !nearDrawer && !nearDoor && this.activePrompt) {
       this.activePrompt.destroy();
       this.activePrompt = null;
@@ -2541,13 +2626,15 @@ class Phase3Scene extends BaseScene {
 
   create() {
     super.create();
+    this.sound.stopAll();
+    this.sound.play('musica_fase3', { loop: true, volume: 1.0 });
     GameState.door = 3;
     GameState.updateUI();
     this.showPhaseTitle(TEXTS.PHASE_3);
     this.physics.world.setBounds(0, 0, this.worldWidth, GAME_H + 100);
 
     // ── Estado da fase ──────────────────────────────────────────────────
-    this.timeLeft = 60;
+    this.timeLeft = 80;
     this.keyFound = false;
     this.gameActive = true;
     this.hitCooldown = false;
@@ -2555,26 +2642,26 @@ class Phase3Scene extends BaseScene {
     this.stepXRef = 750;
 
     // ── Estado da água ──────────────────────────────────────────────────
-    // Nível BASE (água sobe até aqui quando alavanca 1 está ativada)
-    this.waterLevelBase = 200;          // nível alto (submerge alavanca 2)
-    this.waterLevelLow = GAME_H + 100; // abaixo da tela (água baixa)
-    this.waterLevel = GAME_H + 300; // começa fora
-    this.waterTargetLevel = GAME_H + 100; // alvo atual
-    this.waterRiseSpeed = 1.0;          // px por frame subindo (suave)
-    this.waterFallSpeed = 2.0;          // px por frame descendo (mais rápido)
-    this.waterRising = false;        // alavanca 1 ativa?
+    this.waterLevelBase = 200;
+    this.waterLevelLow = GAME_H + 100;
+    this.waterLevel = GAME_H + 300;
+    this.waterTargetLevel = GAME_H + 100;
+    this.waterRiseSpeed = 1.0;
+    this.waterFallSpeed = 2.0;
+    this.waterRising = false;
 
     // ── Estado dos puzzles ──────────────────────────────────────────────
-    this.lever1Active = false;  // alavanca 1: sobe/para a água
-    this.lever2Active = false;  // alavanca 2: baixa água + desliza bloco
-    this.button1Revealed = false;  // botão 1 está visível (debaixo do bloco)
-    this.button1Pressed = false;  // botão 1 foi pressionado?
-    this.button2Revealed = false;  // botão 2 foi revelado?
-    this.doorBlockOpen = false;  // bloco esquerdo da porta está aberto?
-    this.doorBlockTimer = null;   // timer para fechar o bloco da porta
-    this.concreteSliding = false;  // bloco de concreto animando?
-    this.doorBlockY = 0;      // posição Y atual do bloco da porta
-    this.doorBlockTargetY = 0;      // posição Y alvo do bloco da porta
+    this.lever1Active = false;
+    this.lever2Active = false;
+    this.button1Revealed = false;
+    this.button1Pressed = false;
+    this.button2Revealed = false;
+    this.button2Pressed = false;
+    this.doorBlockOpen = false;
+    this.doorBlockTimer = null;
+    this.concreteSliding = false;
+    this.doorBlockY = 0;
+    this.doorBlockTargetY = 0;
 
     // ── Grupos e objetos ────────────────────────────────────────────────
     this.platforms = this.physics.add.staticGroup();
@@ -2620,13 +2707,11 @@ class Phase3Scene extends BaseScene {
     const stepX = this.stepXRef;
     this.floorY2 = floorY2;
 
-    // ── Chão primeira metade ────────────────────────────────────────────
     g.fillStyle(0x0d1e2a);
     g.fillRect(0, floorY1, stepX, 80);
     g.fillStyle(0x1a3444);
     g.fillRect(0, floorY1, stepX, 3);
 
-    // ── Degraus ─────────────────────────────────────────────────────────
     g.fillStyle(0x0d1e2a);
     g.fillRect(stepX, floorY1 + 20, 80, 80);
     g.fillRect(stepX + 80, floorY1 + 40, 80, 80);
@@ -2636,25 +2721,21 @@ class Phase3Scene extends BaseScene {
     g.fillRect(stepX + 80, floorY1 + 40, 80, 3);
     g.fillRect(stepX + 160, floorY1 + 60, 80, 3);
 
-    // ── Chão segunda metade ─────────────────────────────────────────────
     g.fillStyle(0x0d1e2a);
     g.fillRect(stepX + 240, floorY2, this.worldWidth - stepX - 240, 100);
     g.fillStyle(0x1a3444);
     g.fillRect(stepX + 240, floorY2, this.worldWidth - stepX - 240, 3);
 
-    // ── Teto e paredes ──────────────────────────────────────────────────
     g.fillStyle(0x050d14);
     g.fillRect(0, 0, this.worldWidth, 30);
     g.fillStyle(0x080f18);
     g.fillRect(0, 0, 20, GAME_H + 150);
     g.fillRect(this.worldWidth - 20, 0, 20, GAME_H + 150);
 
-    // ── Física: chão 1 ──────────────────────────────────────────────────
     const floor1 = this.add.rectangle(stepX / 2, floorY1 + 40, stepX, 80).setVisible(false);
     this.physics.add.existing(floor1, true);
     this.platforms.add(floor1);
 
-    // ── Física: degraus ─────────────────────────────────────────────────
     [
       { x: stepX + 40, y: floorY1 + 60, w: 80 },
       { x: stepX + 120, y: floorY1 + 80, w: 80 },
@@ -2665,13 +2746,11 @@ class Phase3Scene extends BaseScene {
       this.platforms.add(r);
     });
 
-    // ── Física: chão 2 ──────────────────────────────────────────────────
     const floor2W = this.worldWidth - stepX - 240;
     const floor2 = this.add.rectangle(stepX + 240 + floor2W / 2, floorY2 + 50, floor2W, 100).setVisible(false);
     this.physics.add.existing(floor2, true);
     this.platforms.add(floor2);
 
-    // ── Física: paredes ─────────────────────────────────────────────────
     const wallL = this.add.rectangle(10, GAME_H / 2, 20, GAME_H + 150).setVisible(false);
     const wallR = this.add.rectangle(this.worldWidth - 10, GAME_H / 2, 20, GAME_H + 150).setVisible(false);
     [wallL, wallR].forEach(w => {
@@ -2679,7 +2758,6 @@ class Phase3Scene extends BaseScene {
       this.platforms.add(w);
     });
 
-    // ── Plataformas primeira metade ─────────────────────────────────────
     const platforms1 = [
       { x: 70, y: 170, w: 100 },
       { x: 210, y: 300, w: 110 },
@@ -2688,9 +2766,8 @@ class Phase3Scene extends BaseScene {
       { x: 760, y: 240, w: 100 },
     ];
 
-    // ── Plataformas segunda metade ──────────────────────────────────────
     const platforms2 = [
-      { x: 1500, y: floorY2 - 230, w: 130 }, // ← alavanca 2 fica aqui (alta, precisa de água)
+      { x: 1500, y: floorY2 - 230, w: 130 },
       { x: 2750, y: floorY2 - 170, w: 120 },
       { x: 3000, y: floorY2 - 250, w: 130 },
       { x: 3250, y: floorY2 - 180, w: 120 },
@@ -2711,9 +2788,7 @@ class Phase3Scene extends BaseScene {
       this.platforms.add(plat);
     });
 
-    // ── Plataforma alta da porta (canto superior direito) ───────────────
-    // Posição: bem alta, próxima à parede direita
-    const doorPlatY = 110; // bem alto
+    const doorPlatY = 110;
     const doorPlatX = this.worldWidth - 250;
     const doorPlatW = 220;
 
@@ -2726,18 +2801,14 @@ class Phase3Scene extends BaseScene {
     this.physics.add.existing(doorPlat, true);
     this.platforms.add(doorPlat);
 
-    // Salva referência para posicionar a porta e os blocos
     this.doorPlatX = doorPlatX;
     this.doorPlatY = doorPlatY;
     this.doorPlatW = doorPlatW;
 
-    // ── Porta ───────────────────────────────────────────────────────────
     const dx = doorPlatX + doorPlatW / 2 - 27;
     const dy = doorPlatY - 95;
     const dw = 55, dh = 95;
     this.buildDoor(dx, dy, dw, dh);
-
-    // ── Blocos de concreto ao redor da porta (visual) ───────────────────
     this.drawDoorConcreteBlocks(dx, dy, dw, dh);
   }
 
@@ -2764,49 +2835,64 @@ class Phase3Scene extends BaseScene {
     this.physics.add.existing(this.doorZone, true);
     this.doorDestination = 'Phase4Scene';
 
-    // Salva posições para os blocos
     this.doorDx = dx; this.doorDy = dy; this.doorDw = dw; this.doorDh = dh;
   }
 
+  // Blocos fixos ao redor da porta — mais grossos e afastados
   drawDoorConcreteBlocks(dx, dy, dw, dh) {
     const g = this.add.graphics().setDepth(7);
 
-    // Bloco superior
+    // Bloco superior — mais grosso e afastado
     g.fillStyle(0x2a3a4a);
-    g.fillRect(dx - 8, dy - 14, dw + 16, 10);
+    g.fillRect(dx - 18, dy - 22, dw + 36, 18);
     g.fillStyle(0x3a5060, 0.6);
-    g.fillRect(dx - 8, dy - 14, dw + 16, 2);
+    g.fillRect(dx - 18, dy - 22, dw + 36, 2);
 
-    // Bloco direito
+    // Bloco direito — mais grosso e afastado
     g.fillStyle(0x2a3a4a);
-    g.fillRect(dx + dw + 4, dy - 14, 10, dh + 22);
+    g.fillRect(dx + dw + 10, dy - 22, 18, dh + 32);
     g.fillStyle(0x3a5060, 0.6);
-    g.fillRect(dx + dw + 4, dy - 14, 2, dh + 22);
+    g.fillRect(dx + dw + 10, dy - 22, 2, dh + 32);
+
+    // Física bloco direito
+    const rightBlock = this.add.rectangle(
+      dx + dw + 10 + 9, dy - 22 + (dh + 32) / 2,
+      18, dh + 32
+    ).setVisible(false);
+    this.physics.add.existing(rightBlock, true);
+    this.platforms.add(rightBlock);
+
+    // Física bloco superior
+    const topBlock = this.add.rectangle(
+      dx - 18 + (dw + 36) / 2, dy - 22 + 9,
+      dw + 36, 18
+    ).setVisible(false);
+    this.physics.add.existing(topBlock, true);
+    this.platforms.add(topBlock);
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  BLOCO ESQUERDO DA PORTA (o que o botão 2 abre)
+  //  BLOCO ESQUERDO DA PORTA (controlado pelo botão 2)
   // ════════════════════════════════════════════════════════════════════════
   createDoorBlock() {
     const dx = this.doorDx, dy = this.doorDy, dh = this.doorDh;
 
-    const bx = dx - 8;
-    const bw = 10;
-    const bh = dh + 22;
-    const by = dy - 14;
+    const bx = dx - 28;     // mais afastado da porta
+    const bw = 18;           // mais grosso
+    const bh = dh + 32;      // mais alto para cobrir tudo
+    const by = dy - 22;      // alinhado com os outros blocos
 
     this.doorBlockClosedY = by;
     this.doorBlockOpenY = by - bh - 20;
     this.doorBlockY = by;
     this.doorBlockTargetY = by;
 
-    // ← Salva ANTES de chamar _redrawDoorBlock
     this._doorBlockBx = bx;
     this._doorBlockBw = bw;
     this._doorBlockBh = bh;
 
     this.doorBlockGfx = this.add.graphics().setDepth(9);
-    this._redrawDoorBlock(); // ← agora as refs já existem
+    this._redrawDoorBlock();
 
     this.doorBlockPhysRect = this.add.rectangle(bx + bw / 2, by + bh / 2, bw, bh).setVisible(false);
     this.physics.add.existing(this.doorBlockPhysRect, true);
@@ -2816,7 +2902,7 @@ class Phase3Scene extends BaseScene {
   _redrawDoorBlock() {
     const g = this.doorBlockGfx;
     g.clear();
-    if (this.doorBlockOpen && this.doorBlockY <= this.doorBlockOpenY + 5) return; // já aberto — invisível
+    if (this.doorBlockOpen && this.doorBlockY <= this.doorBlockOpenY + 5) return;
 
     const bx = this._doorBlockBx;
     const bw = this._doorBlockBw;
@@ -2827,15 +2913,13 @@ class Phase3Scene extends BaseScene {
     g.fillRect(bx, by, bw, bh);
     g.fillStyle(0x3a5060, 0.6);
     g.fillRect(bx, by, 2, bh);
-    // Detalhes de parafusos
     g.fillStyle(0x1a2530);
     g.fillCircle(bx + bw / 2, by + 8, 2);
     g.fillCircle(bx + bw / 2, by + bh - 8, 2);
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  ALAVANCA 1  —  controla a água (sobe / para)
-  //  Posição: início do cenário, chão da primeira metade, próxima à parede E
+  //  ALAVANCA 1
   // ════════════════════════════════════════════════════════════════════════
   createLever1() {
     const lx = 630;
@@ -2846,22 +2930,19 @@ class Phase3Scene extends BaseScene {
     this.lever1Gfx = this.add.graphics().setDepth(5);
     this._drawLever(this.lever1Gfx, lx, ly, this.lever1Active, 1);
 
-    // Zona de interação
     this.lever1Zone = this.add.zone(lx, ly - 10, 40, 50);
     this.physics.add.existing(this.lever1Zone, true);
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  ALAVANCA 2  —  plataforma alta (x≈2500), só alcançável com água alta
-  //  Ao ativar: baixa a água + desliza bloco de concreto sobre o botão 1
+  //  ALAVANCA 2
   // ════════════════════════════════════════════════════════════════════════
   createLever2() {
-    // Plataforma de referência: { x: 1700, y: floorY2 - 230, w: 130 }
     const platY = this.floorY2 - 230;
     const platX = 1500;
     const platW = 130;
 
-    const lx = platX + platW / 2; // centro da plataforma
+    const lx = platX + platW / 2;
     const ly = platY - 32;
 
     this.lever2X = lx;
@@ -2872,21 +2953,17 @@ class Phase3Scene extends BaseScene {
     this.lever2Zone = this.add.zone(lx, ly - 10, 40, 50);
     this.physics.add.existing(this.lever2Zone, true);
 
-    // Altura mínima da superfície da água para alcançar a plataforma
-    // (a plataforma fica em platY, precisa flutuar perto)
-    this.lever2RequiredWaterLevel = platY + 60; // player precisa estar flutuando perto
+    this.lever2RequiredWaterLevel = platY + 60;
   }
 
   _drawLever(g, x, y, active, id) {
     g.clear();
-    // Base da alavanca
     g.fillStyle(0x334455);
     g.fillRect(x - 12, y + 10, 24, 14);
     g.fillStyle(0x445566);
     g.fillRect(x - 12, y + 10, 24, 3);
 
-    // Haste — inclina conforme o estado
-    const angle = active ? -0.7 : 0.7; // radianos
+    const angle = active ? -0.7 : 0.7;
     const len = 28;
     const ex = x + Math.sin(angle) * len;
     const ey = (y + 10) - Math.cos(angle) * len;
@@ -2897,99 +2974,73 @@ class Phase3Scene extends BaseScene {
     g.lineTo(ex, ey);
     g.strokePath();
 
-    // Bolinha no topo
     g.fillStyle(active ? 0x44ffaa : 0xaabbcc);
     g.fillCircle(ex, ey, 6);
 
-    // Label pequeno
     g.fillStyle(active ? 0x44ffaa : 0x556677, 0.9);
     g.fillRect(x - 8, y + 26, 16, 5);
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  //  BOTÕES — design unificado + ativação por colisão
-  // ═══════════════════════════════════════════════════════════════════════
-
+  // ════════════════════════════════════════════════════════════════════════
+  //  BOTÕES
+  // ════════════════════════════════════════════════════════════════════════
   _drawButton(g, x, y, pressed, color) {
     g.clear();
     const col = Phaser.Display.Color.HexStringToColor(color).color;
-    const w = 44, h = 10, r = 7; // retângulo fino e largo
+    const w = 44, h = 10, r = 7;
 
-    // Sombra/base mais escura
     g.fillStyle(0x111820);
     g.fillRect(x - w / 2 + 2, y - h / 2 + 2, w, h);
 
-    // Corpo do botão
     g.fillStyle(pressed ? col : 0x1e2e3e);
     g.fillRect(x - w / 2, y - h / 2, w, h);
 
-    // Borda colorida
     g.lineStyle(1.5, col, pressed ? 1.0 : 0.45);
     g.strokeRect(x - w / 2, y - h / 2, w, h);
 
-    // Semicírculo central (sobe do retângulo)
     g.fillStyle(pressed ? col : 0x2a3e52);
-    g.fillCircle(x, y - h / 2, r); // centro no topo do rect
+    g.fillCircle(x, y - h / 2, r);
     g.lineStyle(1.5, col, pressed ? 1.0 : 0.45);
     g.strokeCircle(x, y - h / 2, r);
 
-    // Brilho no semicírculo
     g.fillStyle(0xffffff, pressed ? 0.35 : 0.08);
     g.fillCircle(x - 2, y - h / 2 - 2, r * 0.45);
 
-    // Dois pontinhos laterais decorativos
     g.fillStyle(col, pressed ? 0.9 : 0.3);
     g.fillCircle(x - w / 2 + 6, y, 2);
     g.fillCircle(x + w / 2 - 6, y, 2);
   }
 
-  // Cria sensor de colisão para um botão (player OU caixote disparam)
   _createButtonSensor(zone, onActivate) {
-    // Player
-    this.physics.add.overlap(this.player, zone, () => {
-      onActivate();
-    }, null, this);
-
-    // Caixote (se existir no momento da criação)
+    this.physics.add.overlap(this.player, zone, () => onActivate(), null, this);
     if (this.crate) {
-      this.physics.add.overlap(this.crate, zone, () => {
-        onActivate();
-      }, null, this);
+      this.physics.add.overlap(this.crate, zone, () => onActivate(), null, this);
     }
   }
+
   // ════════════════════════════════════════════════════════════════════════
   //  BOTÃO 1 + estrutura de concreto + caixote
-  //  Posição: próximo à parede/escada, chão segunda metade
   // ════════════════════════════════════════════════════════════════════════
   createButton1Setup() {
-    // Botão 1 fica logo após a descida, próximo à parede da escada
     const btn1X = 1200;
-    const btn1Y = this.floorY2; // nível do chão
+    const btn1Y = this.floorY2;
 
     this.btn1X = btn1X;
     this.btn1Y = btn1Y;
 
-    // Estrutura de concreto: 3 blocos empilhados + 1 bloco no topo que desliza
-    // Layout: [bloco esq fixo] [bloco top MÓVEL] [bloco dir fixo]
-    // O botão fica dentro, escondido pelo bloco móvel quando active=false
-    // Após alavanca2: bloco móvel desliza p/ direita → botão aparece
-
     this._drawButton1Setup();
     this._createCrate();
     this._createRock2();
-
-
   }
 
   _drawButton1Setup() {
     const bx = this.btn1X;
     const by = this.btn1Y;
-    const bw = 16;  // blocos laterais finos
-    const inner = 60;  // abertura interna — espaço onde o player entra
-    const bh = 70;  // altura dos blocos laterais
-    const tbh = 12;  // altura do bloco deslizante (fino)
+    const bw = 16;
+    const inner = 60;
+    const bh = 70;
+    const tbh = 12;
 
-    // Salva tudo para uso nos outros métodos
     this._btn1Bx = bx;
     this._btn1By = by;
     this._btn1Bw = bw;
@@ -2997,61 +3048,49 @@ class Phase3Scene extends BaseScene {
     this._btn1TbH = tbh;
     this._btn1Inner = inner;
 
-    // ── Gráfico fixo (blocos laterais) ──────────────────────────────────
     const g = this.add.graphics().setDepth(4);
 
-    // Bloco esquerdo fixo — de (bx - bw) até (bx)
     g.fillStyle(0x2a3a4a);
     g.fillRect(bx - bw, by - bh, bw, bh);
     g.fillStyle(0x3a5060, 0.5);
-    g.fillRect(bx - bw, by - bh, bw, 2);   // borda superior
-    g.fillRect(bx - bw, by - bh, 2, bh);   // borda esquerda
-    // Parafusos decorativos
+    g.fillRect(bx - bw, by - bh, bw, 2);
+    g.fillRect(bx - bw, by - bh, 2, bh);
     g.fillStyle(0x1a2530);
     g.fillCircle(bx - bw + 5, by - bh + 8, 2);
     g.fillCircle(bx - bw + 5, by - 8, 2);
 
-    // Bloco direito fixo — de (bx + inner) até (bx + inner + bw)
     g.fillStyle(0x2a3a4a);
     g.fillRect(bx + inner, by - bh, bw, bh);
     g.fillStyle(0x3a5060, 0.5);
-    g.fillRect(bx + inner, by - bh, bw, 2);          // borda superior
-    g.fillRect(bx + inner + bw - 2, by - bh, 2, bh); // borda direita
-    // Parafusos decorativos
+    g.fillRect(bx + inner, by - bh, bw, 2);
+    g.fillRect(bx + inner + bw - 2, by - bh, 2, bh);
     g.fillStyle(0x1a2530);
     g.fillCircle(bx + inner + bw - 5, by - bh + 8, 2);
     g.fillCircle(bx + inner + bw - 5, by - 8, 2);
 
-    // ── Física dos blocos laterais ───────────────────────────────────────
-    // Bloco esq: centro X = bx - bw/2
     const leftBlock = this.add.rectangle(bx - bw / 2, by - bh / 2, bw, bh).setVisible(false);
-    // Bloco dir: centro X = bx + inner + bw/2
     const rightBlock = this.add.rectangle(bx + inner + bw / 2, by - bh / 2, bw, bh).setVisible(false);
     this.physics.add.existing(leftBlock, true);
     this.physics.add.existing(rightBlock, true);
     this.platforms.add(leftBlock);
     this.platforms.add(rightBlock);
 
-    // ── Bloco deslizante (começa cobrindo a abertura, desliza p/ direita) ─
-    // Largura total = bw (esq) + inner (abertura) + bw (dir) = cobre tudo
     this.slidingBlockGfx = this.add.graphics().setDepth(6);
-    this.slidingBlockX = bx - bw;              // começa alinhado à borda esq
-    this.slidingBlockTargX = bx - bw;              // alvo inicial (parado)
-    this.slidingBlockW = bw + inner + bw;       // cobre toda a estrutura
+    this.slidingBlockX = bx - bw;
+    this.slidingBlockTargX = bx - bw;
+    this.slidingBlockW = bw + inner + bw;
     this._redrawSlidingBlock();
 
-    // Física do bloco deslizante — bloqueia a entrada de cima
-    const slidingTopY = by - bh - tbh; // Y do topo da abertura
+    const slidingTopY = by - bh - tbh;
     this.slidingBlockPhys = this.add.rectangle(
-      bx - bw + (bw + inner + bw) / 2,  // centro X inicial (cobre tudo)
-      slidingTopY + tbh / 2,             // centro Y
-      bw + inner + bw,                   // largura = mesma do visual
-      tbh                                // altura fina
+      bx - bw + (bw + inner + bw) / 2,
+      slidingTopY + tbh / 2,
+      bw + inner + bw,
+      tbh
     ).setVisible(false);
     this.physics.add.existing(this.slidingBlockPhys, true);
     this.platforms.add(this.slidingBlockPhys);
 
-    // ── Botão 1 (no centro da abertura, inicialmente coberto) ────────────
     const btnCenterX = bx + inner / 2;
     this.btn1Gfx = this.add.graphics().setDepth(5);
     this._drawButton(this.btn1Gfx, btnCenterX, by - 4, false, '#ffaa00');
@@ -3080,26 +3119,23 @@ class Phase3Scene extends BaseScene {
     g.fillRect(bx, by, bw, bh);
     g.fillStyle(0x3a5060, 0.6);
     g.fillRect(bx, by, bw, 2);
-    // Parafusos decorativos
     g.fillStyle(0x1a2530);
     g.fillCircle(bx + 8, by + bh / 2, 2);
     g.fillCircle(bx + bw - 8, by + bh / 2, 2);
   }
 
   _createCrate() {
-    // Caixote de madeira em cima do bloco superior da estrutura
-    const cx = this._btn1Bx + this._btn1Bw / 2; // centro dos blocos
-    const cy = this._btn1By - this._btn1Bh - this._btn1TbH - 18; // em cima do bloco
+    const cx = this._btn1Bx + this._btn1Bw + this._btn1Inner + this._btn1Bw + 40;
+    const cy = this._btn1By - 14;
 
     this.crateGfx = this.add.graphics().setDepth(7);
 
-    // Física do caixote (dinâmica — pode flutuar)
     this.crate = this.physics.add.image(cx, cy, '__DEFAULT').setVisible(false);
     this.crate.setDisplaySize(28, 28);
     this.crate.body.setSize(28, 28);
     this.crate.body.setCollideWorldBounds(false);
     this.crate.body.setBounce(0.1);
-    this.crate.body.setDragX(200);
+    this.crate.body.setDragX(400);
     this.crate.body.setGravityY(300);
 
     this.physics.add.collider(this.crate, this.platforms);
@@ -3115,38 +3151,30 @@ class Phase3Scene extends BaseScene {
     const cy = this.crate.y - 14;
     const s = 28;
 
-    // Corpo de madeira
     g.fillStyle(0x8B5E3C);
     g.fillRect(cx, cy, s, s);
 
-    // Ripas verticais
     g.lineStyle(1, 0x5a3a20, 0.8);
     g.beginPath(); g.moveTo(cx + s / 3, cy); g.lineTo(cx + s / 3, cy + s); g.strokePath();
     g.beginPath(); g.moveTo(cx + 2 * s / 3, cy); g.lineTo(cx + 2 * s / 3, cy + s); g.strokePath();
-
-    // Ripas horizontais
     g.beginPath(); g.moveTo(cx, cy + s / 3); g.lineTo(cx + s, cy + s / 3); g.strokePath();
     g.beginPath(); g.moveTo(cx, cy + 2 * s / 3); g.lineTo(cx + s, cy + 2 * s / 3); g.strokePath();
 
-    // Borda escura
     g.lineStyle(2, 0x3a2010, 0.9);
     g.strokeRect(cx, cy, s, s);
 
-    // Brilho
     g.fillStyle(0xffffff, 0.08);
     g.fillRect(cx + 2, cy + 2, s - 4, 4);
   }
 
   _pushCrate(player, crate) {
-    // O player empurra o caixote horizontalmente
     const dir = crate.x > player.x ? 1 : -1;
     crate.body.setVelocityX(dir * 180);
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  BOTÃO 2  —  abre o bloco esquerdo da porta
-  //  Aparece após botão 1 ser pressionado
-  //  Posição: próximo ao final, antes da porta
+  //  BOTÃO 2 — abre bloco esquerdo da porta
+  //  Player OU caixote ativam. Fecha 8s após saírem.
   // ════════════════════════════════════════════════════════════════════════
   _createButton2() {
     this.btn2Gfx = this.add.graphics().setDepth(5);
@@ -3156,14 +3184,31 @@ class Phase3Scene extends BaseScene {
     this.physics.add.existing(this.button2Zone, true);
     this.button2Revealed = true;
 
-    this._createButtonSensor(this.button2Zone, () => {
-      if (!this.button2Revealed || this.button2Pressed) return;
-      if (!this._crateOnButton2()) {
-        this._flashButton2();
-        return;
-      }
+    // Player ativa
+    this.physics.add.overlap(this.player, this.button2Zone, () => {
       this._activateButton2();
-    });
+    }, null, this);
+
+    // Caixote também ativa
+    if (this.crate) {
+      this.physics.add.overlap(this.crate, this.button2Zone, () => {
+        this._activateButton2();
+      }, null, this);
+    }
+  }
+
+  _activateButton2() {
+    if (!this.button2Revealed) return;
+    if (!this.doorBlockOpen) {
+      this.doorBlockOpen = true;
+      this.doorBlockTargetY = this.doorBlockOpenY;
+      this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 4, true, '#00aaff');
+    }
+    // Cancela timer de fechar enquanto algo estiver em cima
+    if (this.doorBlockTimer) {
+      this.doorBlockTimer.remove();
+      this.doorBlockTimer = null;
+    }
   }
 
   _redrawRock2() {
@@ -3174,17 +3219,13 @@ class Phase3Scene extends BaseScene {
     const rw = this.rock2W;
     const rh = this.rock2H;
 
-    // Corpo da rocha — irregular com polígono
     g.fillStyle(0x4a5560);
-    g.fillRect(rx + 4, ry, rw - 8, rh);       // centro
-    g.fillRect(rx, ry + 6, rw, rh - 10);       // laterais mais baixas
-    // Topo irregular
+    g.fillRect(rx + 4, ry, rw - 8, rh);
+    g.fillRect(rx, ry + 6, rw, rh - 10);
     g.fillStyle(0x5a6570);
     g.fillTriangle(rx + 4, ry, rx + rw / 2, ry - 8, rx + rw - 4, ry);
-    // Sombra / detalhe
     g.fillStyle(0x2a3540, 0.6);
     g.fillRect(rx + 4, ry + rh - 5, rw - 8, 4);
-    // Brilho
     g.fillStyle(0x7a8a99, 0.4);
     g.fillRect(rx + 6, ry + 4, 8, 3);
   }
@@ -3194,12 +3235,12 @@ class Phase3Scene extends BaseScene {
     const diff = this.rock2X - this.rock2TargX;
     if (Math.abs(diff) > 0.5) {
       this.rock2X -= diff * 0.08;
-      // Move física junto
       this.rock2PhysRect.x = this.rock2X;
       this.rock2PhysRect.body.reset(this.rock2X, this.rock2PhysRect.y);
       this._redrawRock2();
     }
   }
+
   _createRock2() {
     const b2x = this.doorPlatX - 120;
     const b2y = this.floorY2;
@@ -3209,7 +3250,7 @@ class Phase3Scene extends BaseScene {
     this.rock2W = 60;
     this.rock2H = 28;
     this.rock2X = b2x;
-    this.rock2TargX = b2x; // parada até botão 1 ser pressionado
+    this.rock2TargX = b2x;
 
     this.rock2Gfx = this.add.graphics().setDepth(6);
     this._redrawRock2();
@@ -3218,6 +3259,7 @@ class Phase3Scene extends BaseScene {
     this.physics.add.existing(this.rock2PhysRect, true);
     this.platforms.add(this.rock2PhysRect);
   }
+
   // ════════════════════════════════════════════════════════════════════════
   //  ÁGUA
   // ════════════════════════════════════════════════════════════════════════
@@ -3228,7 +3270,6 @@ class Phase3Scene extends BaseScene {
   updateWater() {
     if (!this.gameActive || this.transitioning) return;
 
-    // Interpola suavemente em direção ao alvo
     const diff = this.waterLevel - this.waterTargetLevel;
     if (Math.abs(diff) > 0.5) {
       this.waterLevel -= diff * 0.04 * this.waterRiseSpeed;
@@ -3239,12 +3280,11 @@ class Phase3Scene extends BaseScene {
     const g = this.waterGfx;
     g.clear();
 
-    if (this.waterLevel >= GAME_H) return; // fora da tela
+    if (this.waterLevel >= GAME_H) return;
 
     g.fillStyle(0x0044aa, 0.4);
     g.fillRect(0, this.waterLevel, this.worldWidth, GAME_H + 200 - this.waterLevel);
 
-    // Superfície
     const t = this.time.now / 800;
     g.fillStyle(0x2266cc, 0.25);
     for (let wx = 0; wx < this.worldWidth; wx += 80) {
@@ -3254,8 +3294,6 @@ class Phase3Scene extends BaseScene {
     g.fillStyle(0x44aaff, 0.12);
     g.fillRect(0, this.waterLevel + 4, this.worldWidth, 3);
 
-    // ── Física da água no player ────────────────────────────────────────
-    // VERIFICA se o player está DENTRO da água (entre a superfície e o fundo)
     const isUnderwater = this.player.y > this.waterLevel && this.player.y < this.waterLevel + 200;
 
     if (isUnderwater && !this.transitioning) {
@@ -3273,7 +3311,7 @@ class Phase3Scene extends BaseScene {
       if (!this.underwaterTimer) {
         this.underwaterTimer = this.time.delayedCall(15000, () => {
           if (this.player.y > this.waterLevel) {
-            if (GameState.damage(1)) {
+            if (GameState.damage(1, this)) {
               this.transitionTo('GameOverScene');
             } else {
               this.transitioning = true;
@@ -3285,13 +3323,11 @@ class Phase3Scene extends BaseScene {
         });
       }
 
-      // ── Flutuação do caixote ──────────────────────────────────────────
       if (this.crate && this.crate.y > this.waterLevel) {
-        // Empuxo: quanto mais submerso, mais sobe
         const submerge = Math.min(1, (this.crate.y - this.waterLevel) / 28);
         this.crate.body.setGravityY(-500 * submerge);
         this.crate.body.setMaxVelocityY(60);
-        this.crate.body.setDragX(300); // mais resistência na água
+        this.crate.body.setDragX(300);
       }
     } else {
       this.player.body.setGravityY(700);
@@ -3302,7 +3338,6 @@ class Phase3Scene extends BaseScene {
         this.underwaterTimer = null;
       }
 
-      // Caixote fora da água — gravidade normal
       if (this.crate && this.crate.y <= this.waterLevel) {
         this.crate.body.setGravityY(300);
         this.crate.body.setMaxVelocityY(400);
@@ -3312,27 +3347,18 @@ class Phase3Scene extends BaseScene {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  ANIMAÇÃO: bloco deslizante sobre o botão 1
+  //  ANIMAÇÕES DE BLOCOS
   // ════════════════════════════════════════════════════════════════════════
   _updateSlidingBlock() {
     const diff = this.slidingBlockX - this.slidingBlockTargX;
     if (Math.abs(diff) > 0.5) {
       this.slidingBlockX -= diff * 0.08;
-
-      // Move a física junto com o visual
       this.slidingBlockPhys.x = this.slidingBlockX + this.slidingBlockW / 2;
-      this.slidingBlockPhys.body.reset(
-        this.slidingBlockPhys.x,
-        this.slidingBlockPhys.y
-      );
-
+      this.slidingBlockPhys.body.reset(this.slidingBlockPhys.x, this.slidingBlockPhys.y);
       this._redrawSlidingBlock();
     }
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  //  ANIMAÇÃO: bloco da porta (sobe ao abrir)
-  // ════════════════════════════════════════════════════════════════════════
   _updateDoorBlock() {
     const diff = this.doorBlockY - this.doorBlockTargetY;
     if (Math.abs(diff) > 0.5) {
@@ -3351,7 +3377,6 @@ class Phase3Scene extends BaseScene {
   handleInteract() {
     if (this.transitioning) return;
 
-    // ── Porta ───────────────────────────────────────────────────────────
     if (this.isNear(this.doorZone)) {
       if (!this.doorBlockOpen) {
         this.showLockedMessage();
@@ -3361,75 +3386,34 @@ class Phase3Scene extends BaseScene {
       return;
     }
 
-    // ── Alavanca 1 ──────────────────────────────────────────────────────
     if (this.isNear(this.lever1Zone)) {
       this.lever1Active = !this.lever1Active;
       this._drawLever(this.lever1Gfx, this.lever1X, this.lever1Y, this.lever1Active, 1);
-
       if (this.lever1Active) {
-        // Liga a subida da água
         this.waterTargetLevel = this.waterLevelBase;
       } else {
-        // Para onde está (não desce — só a alavanca 2 baixa)
         this.waterTargetLevel = this.waterLevel;
       }
       return;
     }
 
-    // ── Alavanca 2 ──────────────────────────────────────────────────────
     if (this.isNear(this.lever2Zone)) {
-      if (this.lever2Active) return; // só ativa uma vez
-
-      // Verifica se o player está alto o suficiente (água subiu)
-      // A alavanca está em posição alta; se chegou até lá, já está OK
+      if (this.lever2Active) return;
       this.lever2Active = true;
       this._drawLever(this.lever2Gfx, this.lever2X, this.lever2Y, true, 2);
-
-      // Baixa a água
       this.lever1Active = false;
       this._drawLever(this.lever1Gfx, this.lever1X, this.lever1Y, false, 1);
       this.waterTargetLevel = this.waterLevelLow;
-
-      // Desliza o bloco de concreto para revelar o botão 1
-      this.slidingBlockTargX = this._btn1Bx + this._btn1Bw * 2 + 20; // desliza p/ direita
+      this.slidingBlockTargX = this._btn1Bx + this._btn1Bw * 2 + 20;
       this._scheduleRevealButton1();
       return;
     }
   }
 
   _scheduleRevealButton1() {
-    // O bloco começa a deslizar imediatamente (animado no update)
-    // Depois de ~1.5s revela o botão visualmente
     this.time.delayedCall(1500, () => {
       this.button1Revealed = true;
     });
-  }
-
-  _crateOnButton2() {
-    if (!this.crate || !this.button2Revealed) return false;
-    const dx = Math.abs(this.crate.x - this.btn2X);
-    const dy = Math.abs(this.crate.y - this.btn2Y);
-    return dx < 20 && dy < 30;
-  }
-
-  _flashButton2() {
-    // Pisca o botão 2 para indicar que falta algo
-    let count = 0;
-    const t = this.time.addEvent({
-      delay: 150,
-      repeat: 5,
-      callback: () => {
-        count++;
-        const col = count % 2 === 0 ? '#00aaff' : '#ff4444';
-        this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y, false, col);
-      }
-    });
-  }
-
-  _activateButton2() {
-    this.doorBlockOpen = true;
-    this.doorBlockTargetY = this.doorBlockOpenY;
-    this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 4, true, '#00aaff');
   }
 
   _closeDoorBlock() {
@@ -3438,7 +3422,7 @@ class Phase3Scene extends BaseScene {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  SALMÕES (sem alteração)
+  //  SALMÕES
   // ════════════════════════════════════════════════════════════════════════
   createSalmons() {
     this.salmonGfx = this.add.graphics().setDepth(4);
@@ -3476,7 +3460,12 @@ class Phase3Scene extends BaseScene {
       const dy = Math.abs(this.player.y - s.y);
       if (dx < 20 && dy < 20 && !this.hitCooldown) {
         this.hitCooldown = true;
-        if (GameState.damage(1)) this.transitionTo('GameOverScene');
+        if (GameState.damage(1, this)) this.transitionTo('GameOverScene');
+
+        // Flash de impacto
+        const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff4400, 0.35)
+          .setScrollFactor(0).setDepth(25);
+        this.tweens.add({ targets: flash, alpha: 0, duration: 400, onComplete: () => flash.destroy() });
         this.time.delayedCall(2000, () => { this.hitCooldown = false; });
       }
 
@@ -3498,7 +3487,7 @@ class Phase3Scene extends BaseScene {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  //  BOLHAS, CORAIS, DECORAÇÃO (sem alteração)
+  //  DECORAÇÃO
   // ════════════════════════════════════════════════════════════════════════
   createPlayerBubbles() {
     this.bubbleGfx = this.add.graphics().setDepth(6);
@@ -3555,7 +3544,7 @@ class Phase3Scene extends BaseScene {
   //  TIMER UI
   // ════════════════════════════════════════════════════════════════════════
   createTimerUI() {
-    this.timerText = this.add.text(GAME_W / 2, 20, '60', {
+    this.timerText = this.add.text(GAME_W / 2, 20, '80', {
       fontSize: '22px', fontFamily: 'Courier New',
       color: '#55aaff', letterSpacing: 4
     }).setOrigin(0.5).setScrollFactor(0).setDepth(20);
@@ -3571,7 +3560,7 @@ class Phase3Scene extends BaseScene {
         if (this.timeLeft <= 10) this.timerText.setColor('#ff5555');
         if (this.timeLeft <= 0) {
           this.gameActive = false;
-          if (GameState.damage(1)) {
+          if (GameState.damage(1, this)) {
             this.transitionTo('GameOverScene');
           } else {
             const flood = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0044aa, 0)
@@ -3586,7 +3575,7 @@ class Phase3Scene extends BaseScene {
           }
         }
       },
-      repeat: 59
+      repeat: 79
     });
   }
 
@@ -3634,7 +3623,6 @@ class Phase3Scene extends BaseScene {
     super.update();
     if (this.transitioning) return;
 
-    // Câmera
     if (this.player.x > this.stepXRef) {
       this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_H + 200);
     } else {
@@ -3649,46 +3637,53 @@ class Phase3Scene extends BaseScene {
     this._updateDoorBlock();
     this._drawCrate();
 
-    // ── Botão 2: mantém porta aberta só enquanto caixote estiver em cima ──
-    if (this.button2Revealed) {
-      const crateOnBtn = this._crateOnButton2();
-      if (crateOnBtn && !this.doorBlockOpen) {
-        this.doorBlockOpen = true;
-        this.doorBlockTargetY = this.doorBlockOpenY;
-        this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 4, true, '#00aaff');
-      } else if (!crateOnBtn && this.doorBlockOpen) {
-        this.doorBlockOpen = false;
-        this.doorBlockTargetY = this.doorBlockClosedY;
-        this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 4, false, '#00aaff');
+    // ── Botão 2: timer de 8s para fechar após player/caixote saírem ─────
+    if (this.button2Revealed && this.doorBlockOpen) {
+      const playerOnBtn = this.isNear(this.button2Zone, 30);
+      const crateOnBtn = this.crate &&
+        Math.abs(this.crate.x - this.btn2X) < 30 &&
+        Math.abs(this.crate.y - this.btn2Y) < 35;
+      const somethingOnBtn = playerOnBtn || crateOnBtn;
+
+      if (somethingOnBtn) {
+        // Algo em cima — cancela timer de fechar
+        if (this.doorBlockTimer) {
+          this.doorBlockTimer.remove();
+          this.doorBlockTimer = null;
+        }
+      } else {
+        // Nada em cima — inicia timer de 8s se ainda não iniciou
+        if (!this.doorBlockTimer) {
+          this.doorBlockTimer = this.time.delayedCall(8000, () => {
+            this._closeDoorBlock();
+            if (this.btn2Gfx) {
+              this._drawButton(this.btn2Gfx, this.btn2X, this.btn2Y - 4, false, '#00aaff');
+            }
+            this.doorBlockTimer = null;
+          });
+        }
       }
     }
 
     // ── Prompts de interação ────────────────────────────────────────────
     let promptText = null;
     let promptColor = '#ffdd44';
-    let promptZone = null;
 
     if (this.isNear(this.doorZone)) {
-      const open = this.doorBlockOpen;
-      promptText = open ? TEXTS.ENTER : '🔒';
-      promptColor = open ? '#ffdd44' : '#ff6666';
-      promptZone = this.doorZone;
+      promptText = this.doorBlockOpen ? TEXTS.ENTER : '🔒';
+      promptColor = this.doorBlockOpen ? '#ffdd44' : '#ff6666';
     } else if (this.isNear(this.lever1Zone)) {
       promptText = this.lever1Active ? '⬇ Alavanca' : '⬆ Alavanca';
       promptColor = '#44ffaa';
-      promptZone = this.lever1Zone;
     } else if (this.isNear(this.lever2Zone)) {
       promptText = '⬇ Alavanca';
       promptColor = '#44ffaa';
-      promptZone = this.lever2Zone;
     } else if (this.button1Revealed && !this.button1Pressed && this.isNear(this.button1Zone)) {
       promptText = '● Botão';
       promptColor = '#ffaa00';
-      promptZone = this.button1Zone;
-    } else if (this.button2Revealed && !this.button2Pressed && this.isNear(this.button2Zone)) {
+    } else if (this.button2Revealed && this.isNear(this.button2Zone)) {
       promptText = '● Botão';
       promptColor = '#00aaff';
-      promptZone = this.button2Zone;
     }
 
     if (promptText && !this.activePrompt) {
@@ -3696,412 +3691,51 @@ class Phase3Scene extends BaseScene {
     } else if (!promptText && this.activePrompt) {
       this.activePrompt.destroy();
       this.activePrompt = null;
-    } else if (promptText && this.activePrompt) {
-      // Atualiza texto do prompt se mudou
-      if (this.activePrompt.text !== promptText) {
-        this.activePrompt.destroy();
-        this.activePrompt = null;
-        this.createPrompt(promptText, -70, promptColor);
-      }
+    } else if (promptText && this.activePrompt && this.activePrompt.text !== promptText) {
+      this.activePrompt.destroy();
+      this.activePrompt = null;
+      this.createPrompt(promptText, -70, promptColor);
     }
   }
 }
 
 // =============================================
-//  CENA: FASE 4 - ACADEMIA (COM DECORAÇÕES)
+//  CENA: FASE 4 - ACADEMIA ESCURA  (v5)
 // =============================================
 class Phase4Scene extends BaseScene {
   constructor() {
     super('Phase4Scene');
-    this.worldWidth = 2200;
+    this.worldWidth = Math.round(GAME_W * 3.5);
+  }
+
+  preload() {
+    this.load.image('screech', 'assets/images/screech.png');
+    this.load.audio('psst', 'assets/audio/psst.mp3');
+    this.load.audio('som_chave', 'assets/audio/key.ogg');
+    this.load.audio('screech_jumpscare', 'assets/audio/screech jumpscare.mp3');
   }
 
   create() {
     super.create();
-    GameState.door = 4;
-    GameState.updateUI();
-    this.showPhaseTitle(TEXTS.PHASE_4);
-
-    // Configurações específicas
-    this.inLocker = false;
-    this.mariaCooldown = false;
-    this.hitCooldown = false;
-    this.lockerXs = [139, 719, 1319, 1919];
-    this.mariaTriggerXs = [500, 1200, 1800];
-    this.mariaTriggered = [false, false, false];
-
-    this.platforms = this.physics.add.staticGroup();
-    this.weightData = [];
-    this.lockerZones = [];
-
-    this.buildLevel();
-    this.createWeights();
-    this.createLockers();
-    this.createExitDoor();
-    this.createTorches();
-    this.createMirrors();
-
-    this.physics.add.collider(this.player, this.platforms);
-
-    this.mariaGfx = this.add.graphics().setDepth(15);
-  }
-
-  buildLevel() {
-    const g = this.add.graphics();
-
-    // Fundo
-    g.fillStyle(0x080810);
-    g.fillRect(0, 0, this.worldWidth, GAME_H);
-
-    // Chão com padrão quadriculado
-    for (let x = 0; x < this.worldWidth; x += 40) {
-      g.fillStyle(x % 80 === 0 ? 0x111120 : 0x0e0e1c);
-      g.fillRect(x, this.floorY, 40, 60);
-    }
-
-    g.fillStyle(0x2a2840);
-    g.fillRect(0, this.floorY, this.worldWidth, 3);
-
-    // Física do chão
-    const floor = this.add.rectangle(this.worldWidth / 2, this.floorY + 30, this.worldWidth, 60)
-      .setVisible(false);
-    this.physics.add.existing(floor, true);
-    this.platforms.add(floor);
-
-    // Plataformas
-    const platforms = [
-      { x: 150, y: 350, w: 160 }, { x: 420, y: 290, w: 120 }, { x: 680, y: 330, w: 140 },
-      { x: 950, y: 260, w: 130 }, { x: 1200, y: 310, w: 150 }, { x: 1480, y: 270, w: 120 },
-      { x: 1720, y: 300, w: 140 }, { x: 1980, y: 240, w: 120 }
-    ];
-
-    platforms.forEach(p => {
-      g.fillStyle(0x2a1a0a);
-      g.fillRect(p.x, p.y, p.w, 16);
-      g.fillStyle(0x4a3010);
-      g.fillRect(p.x, p.y, p.w, 3);
-
-      const plat = this.add.rectangle(p.x + p.w / 2, p.y + 8, p.w, 16).setVisible(false);
-      this.physics.add.existing(plat, true);
-      this.platforms.add(plat);
-    });
-  }
-
-  createTorches() {
-    const g = this.add.graphics();
-    const positions = [80, 300, 600, 900, 1200, 1500, 1800, 2100];
-
-    positions.forEach(x => {
-      g.fillStyle(0x551100, 0.7);
-      g.fillRect(x - 2, this.floorY - 130, 4, 25);
-      g.fillStyle(0xff4400, 0.8);
-      g.fillCircle(x, this.floorY - 138, 6);
-
-      const glow = this.add.rectangle(x, this.floorY - 138, 26, 26, 0xff4400, 0.05);
-      this.tweens.add({
-        targets: glow,
-        alpha: { from: 0.02, to: 0.10 },
-        duration: 500,
-        yoyo: true,
-        repeat: -1
-      });
-    });
-  }
-
-  createMirrors() {
-    const g = this.add.graphics();
-    const positions = [100, 500, 900, 1300, 1700, 2100];
-
-    positions.forEach(x => {
-      g.fillStyle(0x334455, 0.4);
-      g.fillRect(x, this.floorY - 200, 70, 140);
-      g.lineStyle(2, 0x5566aa, 0.5);
-      g.strokeRect(x, this.floorY - 200, 70, 140);
-    });
-  }
-
-  createLockers() {
-    const g = this.add.graphics().setDepth(2);
-
-    this.lockerXs.forEach(cx => {
-      const x = cx - 19;
-      g.fillStyle(0x1a2233);
-      g.fillRect(x, this.floorY - 90, 38, 90);
-      g.lineStyle(2, 0x4488cc, 0.9);
-      g.strokeRect(x, this.floorY - 90, 38, 90);
-
-      // Maçaneta
-      g.fillStyle(0x2255aa, 0.5);
-      g.fillRect(x + 15, this.floorY - 50, 6, 20);
-
-      // Rótulo
-      this.add.text(cx, this.floorY - 105, 'LOCKER', {
-        fontSize: '9px',
-        fontFamily: 'Courier New',
-        color: '#4499dd',
-        letterSpacing: 1
-      }).setOrigin(0.5).setDepth(3);
-
-      // Zona de interação
-      const zone = this.add.zone(cx, this.floorY - 45, 50, 80);
-      this.physics.add.existing(zone, true);
-      this.lockerZones.push(zone);
-    });
-  }
-
-  createWeights() {
-    this.weightGfx = this.add.graphics().setDepth(2);
-
-    [200, 600, 1000, 1400, 1800].forEach((x, i) => {
-      const weight = {
-        x: x,
-        y: this.floorY - 20,
-        dir: i % 2 === 0 ? 1 : -1,
-        speed: 60
-      };
-      this.weightData.push(weight);
-    });
-  }
-
-  drawWeights() {
-    const g = this.weightGfx;
-    g.clear();
-
-    this.weightData.forEach(w => {
-      // Move os pesos
-      w.x += w.speed * w.dir * 0.016;
-
-      if (w.x > this.worldWidth - 50 || w.x < 50) {
-        w.dir *= -1;
-      }
-
-      // Desenha peso
-      g.fillStyle(0x333344);
-      g.fillRect(w.x - 18, w.y - 6, 36, 12);
-      g.fillStyle(0x222233);
-      g.fillRect(w.x - 22, w.y - 9, 8, 18);
-      g.fillRect(w.x + 14, w.y - 9, 8, 18);
-      g.fillStyle(0x444466);
-      g.fillCircle(w.x - 18, w.y, 9);
-      g.fillCircle(w.x + 18, w.y, 9);
-    });
-  }
-
-  createExitDoor() {
-    const dx = 2100, dw = 55, dh = 95, dy = this.floorY - dh;
-
-    const g = this.add.graphics().setDepth(2);
-    g.fillStyle(COLORS.doorFrame);
-    g.fillRect(dx - 4, dy - 6, dw + 8, dh + 8);
-    g.fillStyle(COLORS.door);
-    g.fillRect(dx, dy, dw, dh);
-    g.fillStyle(COLORS.doorGlow);
-    g.fillCircle(dx + dw - 10, dy + dh / 2, 4);
-
-    // Brilho animado
-    const glow = this.add.rectangle(dx + dw / 2, dy + dh / 2, dw + 20, dh + 20, COLORS.doorGlow, 0.06);
-    this.tweens.add({
-      targets: glow,
-      alpha: { from: 0.03, to: 0.10 },
-      duration: 1200,
-      yoyo: true,
-      repeat: -1
-    });
-
-    this.add.text(dx + dw / 2, dy - 18, '004', {
-      fontSize: '14px',
-      fontFamily: 'Courier New',
-      color: '#bb99ff',
-      letterSpacing: 2
-    }).setOrigin(0.5);
-
-    this.exitZone = this.add.zone(dx + dw / 2, dy + dh / 2, dw, dh);
-    this.physics.add.existing(this.exitZone, true);
-  }
-
-  triggerMaria() {
-    if (this.mariaCooldown || this.inLocker) return;
-
-    this.mariaCooldown = true;
-
-    // Desenha Maria
-    const g = this.mariaGfx;
-    g.clear();
-    g.setAlpha(1);
-
-    const mx = this.player.x + 80;
-    const my = this.floorY - 60;
-
-    g.fillStyle(0x110011, 0.9);
-    g.fillRect(mx - 12, my - 55, 24, 35);
-    g.fillRect(mx - 9, my - 78, 18, 22);
-
-    g.fillStyle(0xffffff);
-    g.fillCircle(mx - 4, my - 68, 7);
-    g.fillCircle(mx + 4, my - 68, 7);
-
-    g.fillStyle(0x660066);
-    g.fillCircle(mx - 4, my - 68, 4);
-    g.fillCircle(mx + 4, my - 68, 4);
-
-    g.fillStyle(0x220022, 0.9);
-    g.fillRect(mx - 11, my - 85, 22, 10);
-    g.fillRect(mx - 10, my - 20, 8, 20);
-    g.fillRect(mx + 2, my - 20, 8, 20);
-
-    // Brilho
-    g.fillStyle(0xff00ff, 0.05);
-    g.fillCircle(mx, my - 40, 45);
-
-    // Animação de fade
-    this.tweens.add({
-      targets: this.mariaGfx,
-      alpha: 0,
-      duration: 2000,
-      onComplete: () => this.mariaGfx.clear()
-    });
-
-    // Aviso
-    const warn = this.add.text(GAME_W / 2, GAME_H / 2 - 20, '(!) ENTRE NO LOCKER!', {
-      fontSize: '16px',
-      fontFamily: 'Courier New',
-      color: '#ff5555',
-      letterSpacing: 2,
-      backgroundColor: '#000000',
-      padding: { x: 10, y: 5 }
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(25);
-
-    this.tweens.add({
-      targets: warn,
-      alpha: { from: 1, to: 0.3 },
-      duration: 300,
-      yoyo: true,
-      repeat: 6,
-      onComplete: () => warn.destroy()
-    });
-
-    // Dano se não se esconder
-    this.time.delayedCall(3000, () => {
-      if (!this.inLocker && !this.hitCooldown) {
-        this.hitCooldown = true;
-
-        if (GameState.damage(1)) {
-          this.transitionTo('GameOverScene');
-        }
-
-        // Flash vermelho
-        const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff0000, 0.4)
-          .setScrollFactor(0).setDepth(30);
-        this.tweens.add({
-          targets: flash,
-          alpha: 0,
-          duration: 500,
-          onComplete: () => flash.destroy()
-        });
-
-        this.time.delayedCall(2000, () => {
-          this.hitCooldown = false;
-        });
-      }
-      this.time.delayedCall(2000, () => {
-        this.mariaCooldown = false;
-      });
-    });
-  }
-
-  handleInteract() {
-    if (this.transitioning) return;
-
-    // Verificar lockers
-    for (let locker of this.lockerZones) {
-      if (this.isNear(locker)) {
-        this.inLocker = !this.inLocker;
-        this.player.body.setAllowGravity(!this.inLocker);
-        if (this.inLocker) this.player.body.setVelocity(0, 0);
-        return;
-      }
-    }
-
-    // Verificar saída
-    if (this.isNear(this.exitZone)) {
-      this.transitionTo('Phase5Scene');
-    }
-  }
-
-  update() {
-    if (this.transitioning) return;
-
-    // Verifica se está em locker
-    if (this.inLocker) {
-      this.player.body.setVelocity(0, 0);
-      this.player.body.setAllowGravity(false);
-
-      // Desenha silhueta no locker
-      const lockerX = this.lockerXs.find(lx => Math.abs(this.player.x - lx) < 60) || this.player.x;
-      this.playerGfx.clear();
-      this.playerGfx.fillStyle(0x112233, 0.7);
-      this.playerGfx.fillRect(lockerX - 8, this.player.y - 35, 16, 35);
-    } else {
-      this.player.body.setAllowGravity(true);
-      this.handleMovement();
-      this.drawPlayer();
-    }
-
-    this.drawWeights();
-
-    // Gatilhos da Maria
-    this.mariaTriggerXs.forEach((tx, i) => {
-      if (!this.mariaTriggered[i] && Math.abs(this.player.x - tx) < 50) {
-        this.mariaTriggered[i] = true;
-        this.triggerMaria();
-      }
-    });
-
-    // Prompts
-    let nearLocker = false;
-    for (let locker of this.lockerZones) {
-      if (this.isNear(locker)) {
-        nearLocker = true;
-        break;
-      }
-    }
-
-    if (nearLocker && !this.activePrompt) {
-      this.createPrompt(this.inLocker ? TEXTS.EXIT_HIDE : TEXTS.HIDE, -70, '#44bbff');
-    } else if (this.isNear(this.exitZone) && !this.activePrompt && !nearLocker) {
-      this.createPrompt(TEXTS.ENTER);
-    } else if (!nearLocker && !this.isNear(this.exitZone) && this.activePrompt) {
-      this.activePrompt.destroy();
-      this.activePrompt = null;
-    }
-  }
-}
-
-// =============================================
-//  CENA: FASE 5 - ACADEMIA ESCURA  (v5)
-// =============================================
-class Phase5Scene extends BaseScene {
-  constructor() {
-    super('Phase5Scene');
-    this.worldWidth = Math.round(GAME_W * 3.5); // fase bem mais longa
-  }
-
-  create() {
-    super.create();
+    this.sound.stopAll();
     GameState.door = 5;
     GameState.updateUI();
-    this.showPhaseTitle(TEXTS.PHASE_5);
+    this.showPhaseTitle(TEXTS.PHASE_4);
 
     // ── ESTADO ─────────────────────────────────────────────
     this.keyFound = false;
     this.screechDerrotado = false;
     this.portaAberta = false;
-    this.tempoPassado = 0;
-    this.tempoLimite = 15000; // 1º ataque em 30s
-    this.cicloAtaque = 0;     // conta quantos ataques já ocorreram
-    this.punicaoAplicada = false;
     this.bauAberto = false;
-    this.screechAtacando = false;
+    this.emJumpscare = false;   // bloqueia tudo durante o jumpscare
+    this.screechVulneravel = false;   // primeiros 5s invulnerável
+    this.scaleTween = null;
+
+    // Timer — quando estoura dispara o jumpscare
+    this.tempoPassado = 0;
+    this.tempoLimite = 30000; // 30s até o 1º susto
+    this.cicloAtaque = 0;
+    this.punicaoAplicada = false;
 
     // ── CENÁRIO ────────────────────────────────────────────
     this.platforms = this.physics.add.staticGroup();
@@ -4113,13 +3747,14 @@ class Phase5Scene extends BaseScene {
     // ── SCREECH ────────────────────────────────────────────
     this.screechObj = this.criarScreech();
 
-    // ── ESCURIDÃO COM GEOMETRYMASK ─────────────────────────
-    this.escuridaoRect = this.add.graphics()
-      .setDepth(20).setScrollFactor(0);
+    // Screech invulnerável nos primeiros 5s
+    this.time.delayedCall(5000, () => { this.screechVulneravel = true; });
+
+    // ── ESCURIDÃO ──────────────────────────────────────────
+    this.escuridaoRect = this.add.graphics().setDepth(20).setScrollFactor(0);
     this.escuridaoRect.fillStyle(0x000000, 0.97);
     this.escuridaoRect.fillRect(0, 0, GAME_W, GAME_H);
 
-    // lantGfx recebe DOIS círculos: mouse + player
     this.lantGfx = this.add.graphics().setScrollFactor(0).setDepth(0);
     this.lantMask = this.lantGfx.createGeometryMask();
     this.lantMask.setInvertAlpha(true);
@@ -4133,25 +3768,22 @@ class Phase5Scene extends BaseScene {
 
     // ── COLISÕES ───────────────────────────────────────────
     this.physics.add.collider(this.player, this.platforms);
-    this.physics.add.overlap(this.player, this.bauZone, () => this.abrirBau(), null, this);
 
-    // ── PSST após 7s ───────────────────────────────────────
+    // ── PSST em 7s — cria tensão ───────────────────────────
     this.time.delayedCall(7000, () => {
-      try { this.sound.play('psst', { volume: 1.0 }); } catch (e) { }
+      this.sound.play('psst', { volume: 1.2 });
     });
   }
 
-  // ── CENÁRIO DA ACADEMIA ───────────────────────────────────
+  // ── CENÁRIO ───────────────────────────────────────────────
   buildAcademia() {
     const g = this.add.graphics().setDepth(1);
     const W = this.worldWidth;
     const fy = this.floorY;
 
-    // Fundo
     g.fillStyle(0x050508);
     g.fillRect(0, 0, W, GAME_H);
 
-    // Chão
     for (let x = 0; x < W; x += 40) {
       g.fillStyle(x % 80 === 0 ? 0x0e0e14 : 0x0b0b10);
       g.fillRect(x, fy, 40, 60);
@@ -4159,30 +3791,20 @@ class Phase5Scene extends BaseScene {
     g.fillStyle(0x1a1a28);
     g.fillRect(0, fy, W, 3);
 
-    // Teto
     g.fillStyle(0x080810);
     g.fillRect(0, 0, W, 28);
     g.fillStyle(0x111118);
     g.fillRect(0, 28, W, 4);
 
-    // Física do chão
     const floor = this.add.rectangle(W / 2, fy + 30, W, 60).setVisible(false);
     this.physics.add.existing(floor, true);
     this.platforms.add(floor);
 
-    // Esteiras (mais espalhadas)
     [120, 480, 900, 1380, 1820, 2300, 2750].forEach(x => this._esteira(g, x, fy));
-
-    // Halteres
     [300, 660, 1050, 1530, 1980, 2450, 2900].forEach(x => this._halteres(g, x, fy));
-
-    // Espelhos
     [60, 340, 700, 1100, 1560, 2000, 2460, 2880, 3200].forEach(x => this._espelho(g, x, fy));
 
-    // Bancos como plataformas (mais deles, mais distribuídos)
     [
-      { x: 200, y: fy - 60, w: 100 },
-      { x: 520, y: fy - 80, w: 120 },
       { x: 820, y: fy - 55, w: 100 },
       { x: 1150, y: fy - 75, w: 110 },
       { x: 1460, y: fy - 60, w: 100 },
@@ -4191,20 +3813,35 @@ class Phase5Scene extends BaseScene {
       { x: 2380, y: fy - 75, w: 110 },
       { x: 2700, y: fy - 55, w: 100 },
       { x: 3000, y: fy - 70, w: 120 },
-    ].forEach(b => {
-      g.fillStyle(0x1a1228);
-      g.fillRect(b.x, b.y, b.w, 18);
-      g.fillStyle(0x2a1a3a);
-      g.fillRect(b.x, b.y, b.w, 4);
-      g.fillStyle(0x111118);
-      g.fillRect(b.x + 8, b.y + 18, 10, 42);
-      g.fillRect(b.x + b.w - 18, b.y + 18, 10, 42);
-      const plat = this.add.rectangle(b.x + b.w / 2, b.y + 9, b.w, 18).setVisible(false);
-      this.physics.add.existing(plat, true);
-      this.platforms.add(plat);
-    });
+    ].forEach(b => this._banco(g, b));
 
-    // Barras no teto (onde screech anda)
+    // Plataforma degrau — jogador sobe aqui primeiro
+    const degX = 300, degY = fy - 100, degW = 90;
+    g.fillStyle(0x1a1228);
+    g.fillRect(degX, degY, degW, 18);
+    g.fillStyle(0x2a1a3a);
+    g.fillRect(degX, degY, degW, 4);
+    g.fillStyle(0x111118);
+    g.fillRect(degX + 8, degY + 18, 10, 52);
+    g.fillRect(degX + degW - 18, degY + 18, 10, 52);
+    const platDeg = this.add.rectangle(degX + degW / 2, degY + 9, degW, 18).setVisible(false);
+    this.physics.add.existing(platDeg, true);
+    this.platforms.add(platDeg);
+
+    // Plataforma alta — onde fica o baú
+    const altX = 450, altY = fy - 160, altW = 130;
+    g.fillStyle(0x1a1228);
+    g.fillRect(altX, altY, altW, 18);
+    g.fillStyle(0x2a1a3a);
+    g.fillRect(altX, altY, altW, 4);
+    g.fillStyle(0x111118);
+    g.fillRect(altX + 8, altY + 18, 10, 112);
+    g.fillRect(altX + altW - 18, altY + 18, 10, 112);
+    const platAlt = this.add.rectangle(altX + altW / 2, altY + 9, altW, 18).setVisible(false);
+    this.physics.add.existing(platAlt, true);
+    this.platforms.add(platAlt);
+
+    // Barras no teto
     for (let x = 150; x < W - 100; x += 320) {
       g.fillStyle(0x1a1a22);
       g.fillRect(x, 28, 160, 8);
@@ -4212,7 +3849,7 @@ class Phase5Scene extends BaseScene {
       g.fillRect(x, 28, 160, 2);
     }
 
-    // Porta (oculta até abrir)
+    // Porta
     this.portaGfx = this.add.graphics().setDepth(2);
     const px = W - 80, dw = 55, dh = 95, dy = fy - dh;
     this.portaGfx.fillStyle(COLORS.doorFrame);
@@ -4223,15 +3860,31 @@ class Phase5Scene extends BaseScene {
     this.portaGfx.strokeRect(px + 5, dy + 5, dw - 10, (dh - 15) / 2);
     this.portaGfx.fillStyle(COLORS.doorGlow);
     this.portaGfx.fillCircle(px + dw - 10, dy + dh / 2, 4);
-    this.portaGfx.setAlpha(0);
 
     this.textPorta = this.add.text(W - 55, fy - 115, '005', {
       fontSize: '13px', fontFamily: 'Courier New',
       color: '#bb99ff', letterSpacing: 2
-    }).setOrigin(0.5).setDepth(3).setAlpha(0);
+    }).setOrigin(0.5).setDepth(3)
 
     this.exitZone = this.add.zone(W - 55, fy - 48, 55, 95);
     this.physics.add.existing(this.exitZone, true);
+
+    this._bauPlataformaX = altX;
+    this._bauPlataformaY = altY;
+    this._bauPlataformaW = altW;
+  }
+
+  _banco(g, b) {
+    g.fillStyle(0x1a1228);
+    g.fillRect(b.x, b.y, b.w, 18);
+    g.fillStyle(0x2a1a3a);
+    g.fillRect(b.x, b.y, b.w, 4);
+    g.fillStyle(0x111118);
+    g.fillRect(b.x + 8, b.y + 18, 10, 42);
+    g.fillRect(b.x + b.w - 18, b.y + 18, 10, 42);
+    const plat = this.add.rectangle(b.x + b.w / 2, b.y + 9, b.w, 18).setVisible(false);
+    this.physics.add.existing(plat, true);
+    this.platforms.add(plat);
   }
 
   _esteira(g, x, fy) {
@@ -4264,59 +3917,41 @@ class Phase5Scene extends BaseScene {
     g.strokeRect(x, fy - 220, 60, 180);
   }
 
-  // ── BAÚ DOURADO ───────────────────────────────────────────
-  // Posicionado a ~40% do mapa — acessível mas exige exploração
+  // ── BAÚ ───────────────────────────────────────────────────
   criarBau() {
-    const bx = Math.round(this.worldWidth * 0.40);
-    const by = this.floorY - 52;
-    const fy = this.floorY;
-
+    const bx = Math.round(this._bauPlataformaX + this._bauPlataformaW / 2) - 22;
+    const by = this._bauPlataformaY - 52;
     const g = this.add.graphics().setDepth(3);
 
-    // Sombra
     g.fillStyle(0x000000, 0.4);
-    g.fillEllipse(bx + 22, fy - 4, 64, 12);
-
-    // Base azul
+    g.fillEllipse(bx + 22, by + 54, 64, 12);
     g.fillStyle(0x1a3a8a);
     g.fillRect(bx, by + 20, 44, 32);
-
-    // Tampa azul
     g.fillStyle(0x2255bb);
     g.fillRect(bx, by, 44, 22);
     g.fillStyle(0x2a66cc);
     g.fillEllipse(bx + 22, by, 44, 14);
-
-    // Faixas douradas
     g.fillStyle(0xddaa00);
     g.fillRect(bx + 19, by, 6, 52);
     g.fillRect(bx, by + 18, 44, 5);
     g.fillRect(bx, by, 6, 52);
     g.fillRect(bx + 38, by, 6, 52);
-
-    // Cadeado
     g.fillStyle(0xffcc00);
     g.fillRect(bx + 17, by + 21, 10, 9);
     g.lineStyle(2.5, 0xffcc00);
     g.beginPath();
     g.arc(bx + 22, by + 21, 5, Math.PI, 0);
     g.strokePath();
-
-    // Rebites
     g.fillStyle(0xffdd44);
-    [[bx + 3, by + 3], [bx + 3, by + 45], [bx + 41, by + 3], [bx + 41, by + 45]].forEach(([rx, ry]) => {
-      g.fillCircle(rx, ry, 3);
-    });
+    [[bx + 3, by + 3], [bx + 3, by + 45], [bx + 41, by + 3], [bx + 41, by + 45]]
+      .forEach(([rx, ry]) => g.fillCircle(rx, ry, 3));
 
-    // Brilho animado pulsante — ajuda a achar no escuro
     const glow = this.add.rectangle(bx + 22, by + 26, 80, 80, 0x3366ff, 0.10).setDepth(2);
     this.tweens.add({
-      targets: glow,
-      alpha: { from: 0.05, to: 0.22 },
+      targets: glow, alpha: { from: 0.05, to: 0.22 },
       duration: 700, yoyo: true, repeat: -1
     });
 
-    // Partículas douradas
     [0, 1, 2].forEach(i => {
       const spark = this.add.rectangle(bx + 5 + i * 17, by - 8 - i * 4, 3, 3, 0xffdd44).setDepth(3);
       this.tweens.add({
@@ -4332,18 +3967,14 @@ class Phase5Scene extends BaseScene {
     this.bauY = by;
   }
 
-  // Na Phase5Scene.js, no método abrirBau():
-
   abrirBau() {
     if (this.bauAberto) return;
-
     this.bauAberto = true;
 
-    // Redesenhar baú aberto
-    const g = this.bauGfx, bx = this.bauX, by = this.bauY, fy = this.floorY;
+    const g = this.bauGfx, bx = this.bauX, by = this.bauY;
     g.clear();
     g.fillStyle(0x000000, 0.4);
-    g.fillEllipse(bx + 22, fy - 4, 64, 12);
+    g.fillEllipse(bx + 22, by + 54, 64, 12);
     g.fillStyle(0x1a3a8a);
     g.fillRect(bx, by + 20, 44, 32);
     g.fillStyle(0xddaa00);
@@ -4361,45 +3992,26 @@ class Phase5Scene extends BaseScene {
     g.fillStyle(0x8855aa, 0.5);
     g.fillRect(bx + 3, by + 22, 38, 26);
 
-    
-    // Chamar o método da BaseScene para criar a chave
     this.createHiddenKey(bx + 22, by + 35);
-
-    // A chave agora aparece e o jogador precisa passar por cima para pegar
-    // (o método createHiddenKey já configura tudo: visual, brilho, zona de coleta)
-
-  
   }
-  // ── SCREECH ───────────────────────────────────────────────
+
+  // ── SCREECH — só patrulha o teto, nunca persegue ─────────
   criarScreech() {
-    const x = Phaser.Math.Between(GAME_W * 0.6, this.worldWidth * 0.85);
-    const container = this.add.container(x, 45).setDepth(19);
+    const x = Phaser.Math.Between(this.worldWidth * 0.55, this.worldWidth * 0.85);
 
-    const corpo = this.add.ellipse(0, 0, 30, 20, 0x0d0505);
-    corpo.setStrokeStyle(1.5, 0x880000);
+    const screech = this.add.image(x, 45, 'screech')
+      .setDepth(19)
+      .setScale(0.15);
 
-    const patas = this.add.graphics();
-    patas.lineStyle(1, 0x660000, 0.8);
-    [[-18, -8], [-22, 0], [-18, 8], [18, -8], [22, 0], [18, 8]].forEach(([px, py]) => {
-      patas.beginPath(); patas.moveTo(0, 0); patas.lineTo(px, py); patas.strokePath();
-    });
-
-    const olhoE = this.add.ellipse(-6, -2, 7, 9, 0xff0000);
-    const olhoD = this.add.ellipse(6, -2, 7, 9, 0xff0000);
-    const pupE = this.add.ellipse(-6, -2, 3, 5, 0x220000);
-    const pupD = this.add.ellipse(6, -2, 3, 5, 0x220000);
-
-    container.add([patas, corpo, olhoE, olhoD, pupE, pupD]);
-
-    container.vx = Phaser.Math.Between(18, 32) * (Math.random() < 0.5 ? 1 : -1);
-    container.vy = Phaser.Math.Between(5, 12) * (Math.random() < 0.5 ? 1 : -1);
+    screech.vx = Phaser.Math.Between(18, 32) * (Math.random() < 0.5 ? 1 : -1);
+    screech.vy = Phaser.Math.Between(5, 12) * (Math.random() < 0.5 ? 1 : -1);
 
     this.tetoTween = this.tweens.add({
-      targets: container, y: 52,
+      targets: screech, y: 52,
       duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
     });
 
-    return container;
+    return screech;
   }
 
   // ── UPDATE ────────────────────────────────────────────────
@@ -4408,43 +4020,52 @@ class Phase5Scene extends BaseScene {
 
     this.handleMovement();
     this.drawPlayer();
-    // após this.handleMovement() e this.drawPlayer()
+
+    // Coleta da chave
     if (!this.keyFound && this.keyZone) {
       const dist = Phaser.Math.Distance.Between(
         this.player.x, this.player.y,
         this.keyZone.x, this.keyZone.y
       );
-
       if (dist < 60) this.collectKey();
     }
 
-    if (!this.screechDerrotado) {
+    // Screech — patrulha + timer + lanterna
+    // Tudo pausado durante o jumpscare
+    if (!this.screechDerrotado && this.screechObj && !this.emJumpscare) {
       this.moverScreech(delta);
       this.atualizarTimer(delta);
       this.verificarLanterna();
     }
 
-    if (this.portaAberta && this.isNear(this.exitZone)) {
+    // Porta
+    if (this.portaAberta && this.isNear(this.exitZone, 120) && !this.emJumpscare) {
       if (this.keyFound) {
         this.transitionTo('FinalScene');
-      } else {
+      } else if (!this._msgPortaExibida) {
+        // FIX: flag evita chamar showLockedMessage todo frame
+        this._msgPortaExibida = true;
         this.showLockedMessage();
+        this.time.delayedCall(2000, () => { this._msgPortaExibida = false; });
       }
     }
 
-    if (!this.bauAberto && this.isNear(this.bauZone) && !this.activePrompt) {
+    // Prompts
+    const precisaBau = !this.bauAberto && this.isNear(this.bauZone);
+    const precisaPorta = this.portaAberta && this.isNear(this.exitZone, 120);
+
+    if (!precisaBau && !precisaPorta) {
+      if (this.activePrompt) { this.activePrompt.destroy(); this.activePrompt = null; }
+    } else if (precisaBau && !this.activePrompt) {
       this.createPrompt('[E] Abrir baú', -70, '#ffdd44');
-    } else if ((this.bauAberto || !this.isNear(this.bauZone)) && this.activePrompt) {
-      this.activePrompt.destroy();
-      this.activePrompt = null;
+    } else if (precisaPorta && !this.activePrompt) {
+      this.createPrompt(
+        this.keyFound ? TEXTS.ENTER : TEXTS.NEED_KEY,
+        -70,
+        this.keyFound ? '#ffdd44' : '#ff6666'
+      );
     }
 
-    if (this.portaAberta && this.isNear(this.exitZone) && !this.activePrompt) {
-      this.createPrompt(this.keyFound ? TEXTS.ENTER : TEXTS.NEED_KEY, -70,
-        this.keyFound ? '#ffdd44' : '#ff6666');
-    }
-
-    // Lanterna — sempre por último
     this.desenharLanterna();
   }
 
@@ -4453,143 +4074,144 @@ class Phase5Scene extends BaseScene {
     if (!this.bauAberto && this.isNear(this.bauZone)) this.abrirBau();
   }
 
-  // ── MOVE SCREECH ──────────────────────────────────────────
+  // ── SCREECH SÓ PATRULHA O TETO ───────────────────────────
   moverScreech(delta) {
+    if (!this.screechObj) return;
     const dt = delta / 1000;
 
-    if (this.screechAtacando) {
-      const dx = this.player.x - this.screechObj.x;
-      const dy = this.player.y - this.screechObj.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+    this.screechObj.x += this.screechObj.vx * dt;
+    this.screechObj.y += this.screechObj.vy * dt;
 
-      if (dist > 20) {
-        // Velocidade aumenta a cada ciclo de ataque (mais agressivo)
-        const velocidade = 160 + this.cicloAtaque * 25;
-        this.screechObj.x += (dx / dist) * velocidade * dt;
-        this.screechObj.y += (dy / dist) * velocidade * dt;
-      } else {
-        this.screechAtacando = false;
-        this.aplicarDanoAtaque();
-      }
-    } else {
-      this.screechObj.x += this.screechObj.vx * dt;
-      this.screechObj.y += this.screechObj.vy * dt;
+    if (this.screechObj.x < 40 || this.screechObj.x > this.worldWidth - 40)
+      this.screechObj.vx *= -1;
+    if (this.screechObj.y < 35 || this.screechObj.y > 85)
+      this.screechObj.vy *= -1;
 
-      if (this.screechObj.x < 40 || this.screechObj.x > this.worldWidth - 40)
-        this.screechObj.vx *= -1;
-      if (this.screechObj.y < 35 || this.screechObj.y > 85)
-        this.screechObj.vy *= -1;
-
-      this.screechObj.y = Phaser.Math.Clamp(this.screechObj.y, 35, 85);
-    }
+    this.screechObj.y = Phaser.Math.Clamp(this.screechObj.y, 35, 85);
   }
 
-  // ── TIMER PROPORCIONAL ────────────────────────────────────
-  // Ciclo 0: 30s | Ciclo 1: 22s | Ciclo 2: 16s | Ciclo 3+: 12s
+  // ── TIMER — quando estoura dispara o jumpscare ────────────
   atualizarTimer(delta) {
-    if (this.punicaoAplicada || this.screechAtacando) return;
+    if (this.punicaoAplicada) return;
     this.tempoPassado += delta;
 
     if (this.tempoPassado >= this.tempoLimite) {
       this.punicaoAplicada = true;
-      this.cicloAtaque++;
-
-      if (this.tetoTween) this.tetoTween.stop();
-      this.screechAtacando = true;
-
-      // Som + flash vermelho imediato ao iniciar ataque
-      try { this.sound.play('screech_jumpscare', { volume: 1.5 }); } catch (e) { }
-
-      const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff0000, 0.55)
-        .setScrollFactor(0).setDepth(60);
-      this.tweens.add({
-        targets: flash, alpha: 0, duration: 800,
-        onComplete: () => flash.destroy()
-      });
+      this.dispararJumpscare();
     }
   }
 
-  // ── DANO ──────────────────────────────────────────────────
-  aplicarDanoAtaque() {
-    const morreu = GameState.damage(2);
+  // ── JUMPSCARE — o susto É o dano ─────────────────────────
+  dispararJumpscare() {
+    this.emJumpscare = true;
 
-    if (morreu) {
-      this.time.delayedCall(900, () => this.transitionTo('GameOverScene'));
-      return;
-    }
+    // Som do susto — toca junto com o visual
+    this.sound.play('screech_jumpscare', { volume: 1.5 });
 
-    // Screech volta ao teto
-    this.time.delayedCall(400, () => {
-      if (!this.screechObj) return;
-      this.screechObj.x = Phaser.Math.Between(300, this.worldWidth - 300);
-      this.screechObj.y = 45;
-      this.screechObj.alpha = 1;
+    // Flash branco cobre a tela (começa em alpha 0)
+    const flashBg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xffffff, 0)
+      .setScrollFactor(0).setDepth(70);
 
-      this.tetoTween = this.tweens.add({
-        targets: this.screechObj, y: 52,
-        duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-      });
+    // Screech grande no centro (começa pequeno e invisível)
+    const jumpscare = this.add.image(GAME_W / 2, GAME_H / 2, 'screech')
+      .setScrollFactor(0).setDepth(71)
+      .setScale(0.1).setAlpha(0);
 
-      // Próximo timer: 30s → 22s → 16s → 12s (mínimo)
-      const limites = [30000, 22000, 16000, 12000];
-      this.tempoLimite = limites[Math.min(this.cicloAtaque, limites.length - 1)];
-      this.tempoPassado = 0;
-      this.punicaoAplicada = false;
+    // Fase 1: flash + screech aparecem juntos em 80ms
+    this.tweens.add({
+      targets: [flashBg, jumpscare],
+      alpha: 1,
+      duration: 80,
+      ease: 'Power3',
+      onComplete: () => {
+        // Fase 2: screech cresce agressivamente em 400ms
+        this.tweens.add({
+          targets: jumpscare,
+          scale: 2.0,
+          duration: 400,
+          ease: 'Back.easeOut',
+          onComplete: () => {
+            // Fase 3: segura na tela por 500ms
+            this.time.delayedCall(500, () => {
+              // Fase 4: some em 1000s
+              this.tweens.add({
+                targets: [flashBg, jumpscare],
+                alpha: 0,
+                duration: 1000,
+                onComplete: () => {
+                  flashBg.destroy();
+                  jumpscare.destroy();
+
+                  // Aplica o dano APÓS o jumpscare terminar
+                  const morreu = GameState.damage(2, this);
+
+                  if (morreu) {
+                    this.transitionTo('GameOverScene');
+                    return;
+                  }
+
+                  // Libera o jogo e reinicia o timer
+                  this.emJumpscare = false;
+                  this.cicloAtaque++;
+
+                  // Ciclos ficam progressivamente mais curtos
+                  const limites = [30000, 20000, 14000, 10000];
+                  this.tempoLimite = limites[Math.min(this.cicloAtaque, limites.length - 1)];
+                  this.tempoPassado = 0;
+                  this.punicaoAplicada = false;
+                }
+              });
+            });
+          }
+        });
+      }
     });
   }
 
-  // ── LANTERNA MATA INSTANTANEAMENTE ────────────────────────
+  // ── LANTERNA — mata o screech ─────────────────────────────
   verificarLanterna() {
-    if (this.screechDerrotado) return;
+    if (this.screechDerrotado || !this.screechObj) return;
+    if (!this.screechVulneravel) return;
 
     const cam = this.cameras.main;
     const screenX = this.screechObj.x - cam.scrollX;
     const screenY = this.screechObj.y - cam.scrollY;
-    const dx = this.input.x - screenX;
-    const dy = this.input.y - screenY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    const dist = Phaser.Math.Distance.Between(this.input.x, this.input.y, screenX, screenY);
 
-    if (dist < 90 + 35) {
-      this.derrotarScreech();
-    }
+    if (dist < 125) this.derrotarScreech();
   }
 
   derrotarScreech() {
-    if (this.screechDerrotado) return;
+    if (this.screechDerrotado || !this.screechObj) return;
     this.screechDerrotado = true;
-    this.screechAtacando = false;
 
+    if (this.scaleTween) this.scaleTween.stop();
     if (this.tetoTween) this.tetoTween.stop();
 
+    // Screech some
     this.tweens.add({
       targets: this.screechObj,
-      alpha: 0, scaleX: 2.5, scaleY: 2.5, duration: 400,
-      onComplete: () => { if (this.screechObj) this.screechObj.destroy(); }
+      alpha: 0, scale: 2.5, rotation: 2, duration: 400,
+      onComplete: () => {
+        if (this.screechObj) { this.screechObj.destroy(); this.screechObj = null; }
+      }
     });
 
     this.time.delayedCall(500, () => {
       this.portaAberta = true;
-      this.portaGfx.setAlpha(1);
-      this.textPorta.setAlpha(1);
-      this.mostrarAviso('✅ Screech derrotado! Encontre a saída.', 3000);
+      this.mostrarAviso('Screech derrotado! Encontre a saída.', 3000);
     });
   }
 
-  // ── LANTERNA: mouse + luz ao redor do player ──────────────
+  // ── LANTERNA ──────────────────────────────────────────────
   desenharLanterna() {
     const cam = this.cameras.main;
-
-    // Posição do player na tela
     const px = this.player.x - cam.scrollX;
     const py = this.player.y - cam.scrollY;
 
     this.lantGfx.clear();
     this.lantGfx.fillStyle(0xffffff);
-
-    // Círculo da lanterna (mouse) — raio 95
     this.lantGfx.fillCircle(this.input.x, this.input.y, 95);
-
-    // Luz ao redor do player — raio 70 (pequena penumbra)
     this.lantGfx.fillCircle(px, py - 20, 70);
   }
 
@@ -4634,7 +4256,7 @@ class FinalScene extends BaseScene {
     */
     this.RAW_MAZE = [
       "1111111111111111111111111111111", // 0
-      "1S00000000010001000100010000001", // 1
+      "1S00000000000001000100010000001", // 1  ← col:11 aberta
       "1010111010111010101110101111101", // 2
       "1010001010001010100010100000101", // 3
       "1011101011101010111010111110101", // 4
@@ -4646,15 +4268,15 @@ class FinalScene extends BaseScene {
       "1010111110111010111110111110101", // 10
       "1000100000001000000010000010001", // 11
       "1111101111101111101110111010111", // 12
-      "1000001000000000000000001010001", // 13  corredor central
+      "1000001000000000000000001010001", // 13
       "1011111011101111101011101110101", // 14
-      "1010000010001000100010000010101", // 15
+      "1010000010000000100010000010101", // 15  ← col:12 aberta
       "1010111110111010111110111110101", // 16
       "1000100000001000000010000000001", // 17
       "1110101110101111101110111010111", // 18
       "1000001010001010000010001010001", // 19
       "1011101011101010111010111010101", // 20
-      "100000001000100010001000000000D", // 21  D = porta
+      "100000001000100010001000000000D", // 21
       "1111111111111111111111111111111", // 22
     ];
 
@@ -4710,8 +4332,8 @@ class FinalScene extends BaseScene {
     ];
     // ── Constantes do Figure ──────────────────────────────────
     this.FIGURE_PATROL_SPEED = 3.2;
-    this.FIGURE_CHASE_SPEED = 6.8;
-    this.FIGURE_HEAR_RADIUS = 6;
+    this.FIGURE_CHASE_SPEED = 5.5;
+    this.FIGURE_HEAR_RADIUS = 10;
     this.FIGURE_KILL_RADIUS = 1;
     this.SOUND_MOVE_LEVEL = 1.0;
     this.SOUND_IDLE_LEVEL = 0.0;
@@ -4778,7 +4400,7 @@ class FinalScene extends BaseScene {
 
     // Atualiza worldWidth ANTES do super.create() para o setupWorld usar o valor certo
     this.worldWidth = this.MAZE_W;
-
+    this.sound.play('music_final', { loop: true, volume: 1.0 });
 
     // Chama o create do BaseScene (configura câmera, player, controles)
     // MAS não queremos o player de física padrão se movendo livremente,
@@ -4833,6 +4455,11 @@ class FinalScene extends BaseScene {
     this.createFigure();
 
     this.cameras.main.fadeIn(1000, 10, 6, 8);
+
+    this.events.on('shutdown', () => {
+      this.figureStepsSound?.stop();
+      Object.values(this.figureGruntSounds ?? {}).forEach(s => s.stop());
+    });
   }
 
   // ── Fundo geral — cobre o mundo inteiro ──────────────────
@@ -4986,16 +4613,22 @@ class FinalScene extends BaseScene {
   createBooks() {
     this.bookObjects = [];
 
-    // Tomos com código 
+    // Junta todas as posições e embaralha
+    const todasPosicoes = [...this.CODE_POSITIONS, ...this.COMMON_POSITIONS];
+    for (let i = todasPosicoes.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [todasPosicoes[i], todasPosicoes[j]] = [todasPosicoes[j], todasPosicoes[i]];
+    }
+
+    // As 5 primeiras posições recebem os livros com código
     this.CODE_BOOK_DATA.forEach((data, i) => {
-      const pos = this.CODE_POSITIONS[i];
-      this.spawnBook(pos.col, pos.row, true, data);
+      this.spawnBook(todasPosicoes[i].col, todasPosicoes[i].row, true, data);
     });
 
-    // Livros comuns (azuis, sem conteúdo real)
-    this.COMMON_POSITIONS.forEach(pos => {
-      this.spawnBook(pos.col, pos.row, false, null);
-    });
+    // O restante recebe livros comuns
+    for (let i = this.CODE_BOOK_DATA.length; i < todasPosicoes.length; i++) {
+      this.spawnBook(todasPosicoes[i].col, todasPosicoes[i].row, false, null);
+    }
   }
 
   spawnBook(col, row, isCode, data) {
@@ -5279,7 +4912,7 @@ class FinalScene extends BaseScene {
           this.playerTile.col + this.moveDir.dx,
           this.playerTile.row + this.moveDir.dy
         );
-        const t = Phaser.Math.Easing.Sine.InOut(this.moveProgress);
+        const t = Phaser.Math.Easing.Cubic.InOut(this.moveProgress);
         this.playerPx.x = Phaser.Math.Linear(from.x, to.x, t);
         this.playerPx.y = Phaser.Math.Linear(from.y, to.y, t);
       }
@@ -5416,7 +5049,7 @@ class FinalScene extends BaseScene {
     const nearDoor = this.playerTile.col === this.doorTile.col &&
       this.playerTile.row === this.doorTile.row;
     if (nearDoor && !this.activePrompt) {
-      const label = this.codesFound.length >= 5 ? TEXTS.ENTER : '🔒 Trancada';
+      const label = this.codesFound.length >= 5 ? TEXTS.ENTER : 'Trancada';
       const color = this.codesFound.length >= 5 ? '#ffdd44' : '#ff6666';
       this.createPrompt(label, -60, color);
     } else if (!nearDoor && this.activePrompt) {
@@ -5501,6 +5134,30 @@ class FinalScene extends BaseScene {
 
     // Inicializa o primeiro destino de patrulha
     this._figureNextPatrolTarget();
+
+    // ── Áudios do Figure ──────────────────────────────────────────
+    try {
+      this.figureStepsSound = this.sound.add('figure_stomps', {
+        loop: true,
+        volume: 0,
+      });
+      this.figureStepsSound.play();
+
+      this.figureGruntSounds = {
+        far: this.sound.add('figure_grunt_far', { volume: 0.7 }),
+        medium: this.sound.add('figure_grunt_medium', { volume: 0.8 }),
+        close: this.sound.add('figure_grunt_close', { volume: 0.9 }),
+      };
+
+      this.figureAttackSound = this.sound.add('figure_jumpscare', { volume: 2.5 });
+
+    } catch (e) {
+      console.error('Erro ao criar sons do Figure:', e);
+      // Define como null para o guard acima funcionar
+      this.figureStepsSound = null;
+      this.figureGruntSounds = null;
+      this.figureAttackSound = null;
+    }
   }
 
   // ── BFS — encontra caminho entre dois tiles ───────────────────
@@ -5542,12 +5199,22 @@ class FinalScene extends BaseScene {
   // ── Define próximo waypoint de patrulha ──────────────────────
   _figureNextPatrolTarget() {
     const fig = this.figure;
-    fig.patrolIndex = (fig.patrolIndex + 1) % this.FIGURE_PATROL_PATH.length;
-    const wp = this.FIGURE_PATROL_PATH[fig.patrolIndex];
-    fig.path = this._bfsPath(fig.col, fig.row, wp.col, wp.row);
+    // Tenta até 14 waypoints para achar um acessível
+    for (let attempt = 0; attempt < this.FIGURE_PATROL_PATH.length; attempt++) {
+      fig.patrolIndex = (fig.patrolIndex + 1) % this.FIGURE_PATROL_PATH.length;
+      const wp = this.FIGURE_PATROL_PATH[fig.patrolIndex];
+      if (!this.isWalkable(wp.col, wp.row)) continue;
+      const path = this._bfsPath(fig.col, fig.row, wp.col, wp.row);
+      if (path.length > 0) {
+        fig.path = path;
+        fig.pathIndex = 0;
+        return;
+      }
+    }
+    // Fallback: fica parado e tenta de novo no próximo frame
+    fig.path = [];
     fig.pathIndex = 0;
   }
-
   // ── Distância em tiles entre Figure e player ─────────────────
   _figureDist() {
     return Math.abs(this.figure.col - this.playerTile.col) +
@@ -5577,28 +5244,39 @@ class FinalScene extends BaseScene {
     this.playerDead = true;
     this.inputBlocked = true;
 
-    // Jumpscare — som + flash vermelho
-    // som: jumpscare/grito do Figure — substitua pelo áudio correto
+    this.figureStepsSound?.stop();
+    this.figureAttackSound?.play();
+    this.cameras.main.shake(400, 0.025);
 
-    const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff0000, 0)
+    // Flash branco — impacto imediato
+    const flashWhite = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xffffff, 0)
+      .setScrollFactor(0).setDepth(59);
+
+    this.tweens.add({
+      targets: flashWhite,
+      alpha: { from: 1, to: 0 },
+      duration: 350,
+      ease: 'Sine.easeOut',
+      onComplete: () => flashWhite.destroy(),
+    });
+
+    // Flash vermelho — pulsa por cima enquanto o branco some
+    const flashRed = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff0000, 0)
       .setScrollFactor(0).setDepth(58);
 
     this.tweens.add({
-      targets: flash, alpha: 0.55, duration: 80,
+      targets: flashRed, alpha: 0.55, duration: 80,
       yoyo: true, repeat: 2,
       onComplete: () => {
-        flash.destroy();
+        flashRed.destroy();
         this._showDeathScreen();
       },
     });
-
-    // Câmera treme
-    this.cameras.main.shake(400, 0.025);
   }
 
   _showDeathScreen() {
     // Reduz vida pelo sistema do GameState
-    const isDead = GameState.damage(4);
+    const isDead = GameState.damage(4, this);
 
     this.deathOverlay.setVisible(true);
     this.tweens.add({ targets: this.deathOverlay, alpha: 0.82, duration: 600 });
@@ -5667,6 +5345,9 @@ class FinalScene extends BaseScene {
         this._figureMoveAlongPath(this.FIGURE_PATROL_SPEED, dt);
         if (!fig.moving && fig.pathIndex >= fig.path.length) {
           this._figureNextPatrolTarget();
+        } else if (!fig.moving && fig.path.length === 0) {
+          // Travado sem caminho — força recalculo
+          this._figureNextPatrolTarget();
         }
         break;
 
@@ -5676,7 +5357,13 @@ class FinalScene extends BaseScene {
           fig.path = this._bfsPath(fig.col, fig.row, this.playerTile.col, this.playerTile.row);
           fig.pathIndex = 0;
         }
-        this._figureMoveAlongPath(this.FIGURE_CHASE_SPEED, dt);
+        const dist = this._figureDist();
+        const chaseSpeed = Phaser.Math.Linear(
+          this.FIGURE_CHASE_SPEED,       // velocidade mínima (longe)
+          this.FIGURE_CHASE_SPEED * 2.2, // velocidade máxima (colado)
+          Phaser.Math.Clamp(1 - dist / this.FIGURE_HEAR_RADIUS, 0, 1)
+        );
+        this._figureMoveAlongPath(chaseSpeed, dt);
 
         // Verifica se alcançou o player
         if (this._figureDist() <= this.FIGURE_KILL_RADIUS ||
@@ -5715,10 +5402,19 @@ class FinalScene extends BaseScene {
         }
         break;
     }
+    // Verifica colisão por proximidade em pixels (evita o player "passar pelo" Figure)
+    const figPx = fig.px;
+    const plrPx = this.playerPx;
+    const pixelDist = Phaser.Math.Distance.Between(figPx.x, figPx.y, plrPx.x, plrPx.y);
+    if (pixelDist < this.TILE * 0.8) {
+      this._figureKillPlayer();
+    }
+
     this._drawFigure();
 
     // Escurece a tela levemente quando o Figure está em chase
     this._updateChaseVignette();
+    this._updateFigureAudio(dt);
   }
 
   // ── Move o Figure um passo ao longo do caminho BFS ───────────
@@ -5738,20 +5434,29 @@ class FinalScene extends BaseScene {
       } else {
         const from = this.tileToPixel(fig.col, fig.row);
         const to = this.tileToPixel(fig.col + fig.moveDir.dx, fig.row + fig.moveDir.dy);
-        const t = Phaser.Math.Easing.Sine.InOut(fig.moveProgress);
+        const t = Phaser.Math.Easing.Cubic.InOut(fig.moveProgress); // ← arrastado
         fig.px.x = Phaser.Math.Linear(from.x, to.x, t);
         fig.px.y = Phaser.Math.Linear(from.y, to.y, t);
       }
     } else {
-      // Pega próximo passo do caminho
       if (fig.pathIndex < fig.path.length) {
         const next = fig.path[fig.pathIndex];
         fig.pathIndex++;
+
+        // ── Segurança: nunca entra em tile de parede ──
+        const destCol = fig.col + next.dx;
+        const destRow = fig.row + next.dy;
+        if (!this.isWalkable(destCol, destRow)) {
+          // Caminho inválido — recalcula do zero
+          fig.path = [];
+          fig.pathIndex = 0;
+          return;
+        }
+
         fig.moveDir = { dx: next.dx, dy: next.dy };
         fig.moveProgress = 0;
         fig.moving = true;
 
-        // Atualiza direção visual
         if (next.dx > 0) fig.facingDir = 'right';
         if (next.dx < 0) fig.facingDir = 'left';
         if (next.dy > 0) fig.facingDir = 'down';
@@ -5782,7 +5487,55 @@ class FinalScene extends BaseScene {
     g.fillRect(0, 0, 18, GAME_H);
     g.fillRect(GAME_W - 18, 0, 18, GAME_H);
   }
+  _updateFigureAudio(dt) {
+    // Guard: sai se os sons ainda não foram inicializados
+    if (!this.figureStepsSound || !this.figureGruntSounds) return;
 
+    const dist = this._figureDist();
+    const fig = this.figure;
+
+    // ── Passos: volume proporcional à distância ───────────────
+    // distância máxima audível = FIGURE_HEAR_RADIUS * 2
+    const maxAudible = this.FIGURE_HEAR_RADIUS * 2;
+    const stepVol = fig.state === 'stunned'
+      ? 0
+      : Phaser.Math.Clamp(1 - dist / maxAudible, 0, 1);
+
+    // Suaviza a mudança de volume (lerp)
+    const currentVol = this.figureStepsSound.volume;
+    this.figureStepsSound.setVolume(
+      Phaser.Math.Linear(currentVol, stepVol, 0.08)
+    );
+
+    // ── Grunhidos: dispara de acordo com a zona ───────────────
+    this._gruntTimer -= dt;
+
+    let zone = null;
+    if (dist <= 3) zone = 'close';
+    else if (dist <= this.FIGURE_HEAR_RADIUS) zone = 'medium';
+    else if (dist <= this.FIGURE_HEAR_RADIUS * 1.8) zone = 'far';
+
+    // Intervalo entre grunhidos (mais curto quando perto)
+    const gruntInterval = zone === 'close' ? 3.5
+      : zone === 'medium' ? 6
+        : zone === 'far' ? 10
+          : 9999;
+
+    if (zone && this._gruntTimer <= 0) {
+      // Toca o grunhido da zona correta
+      const snd = this.figureGruntSounds[zone];
+      if (!snd.isPlaying) snd.play();
+
+      this._gruntTimer = gruntInterval + Phaser.Math.FloatBetween(-0.5, 0.5);
+      this._lastGruntZone = zone;
+    }
+
+    // Reset timer quando entra em zona nova
+    if (zone !== this._lastGruntZone && zone !== null) {
+      this._gruntTimer = 0;
+      this._lastGruntZone = zone;
+    }
+  }
 }
 
 // =============================================
@@ -5793,6 +5546,9 @@ class GameOverScene extends Phaser.Scene {
 
   create() {
     GameState.reset();
+
+    this.sound.stopAll();
+    this.sound.play('musica_gameover', { loop: true, volume: 1.0 });
 
     this.cameras.main.setBackgroundColor('#050508');
     this.cameras.main.fadeIn(700, 0, 0, 0);
@@ -5849,6 +5605,8 @@ class WinScene extends Phaser.Scene {
   constructor() { super({ key: 'WinScene' }); }
 
   create() {
+    this.sound.stopAll();
+    this.sound.play('musica_win', { loop: true, volume: 1.0 });
     this.cameras.main.setBackgroundColor('#050508');
     this.cameras.main.fadeIn(1200, 0, 0, 0);
 
@@ -5934,7 +5692,7 @@ const config = {
     default: 'arcade',
     arcade: {
       gravity: { y: 0 },
-      debug: true
+      debug: false
     }
   },
   scene: [
@@ -5943,7 +5701,6 @@ const config = {
     Phase2Scene,
     Phase3Scene,
     Phase4Scene,
-    Phase5Scene,
     FinalScene,
     GameOverScene,
     WinScene
